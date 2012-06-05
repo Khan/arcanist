@@ -21,7 +21,7 @@
  *
  * @group lint
  */
-final class ArcanistLintSummaryRenderer implements ArcanistLintRenderer {
+final class ArcanistLintSummaryRenderer {
   public function renderLintResult(ArcanistLintResult $result) {
     $messages = $result->getMessages();
     $path = $result->getPath();

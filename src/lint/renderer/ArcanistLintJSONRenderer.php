@@ -21,7 +21,7 @@
  *
  * @group lint
  */
-final class ArcanistLintJSONRenderer implements ArcanistLintRenderer {
+final class ArcanistLintJSONRenderer {
   const LINES_OF_CONTEXT = 3;
 
   public function renderLintResult(ArcanistLintResult $result) {
@@ -41,7 +41,7 @@ final class ArcanistLintJSONRenderer implements ArcanistLintRenderer {
         'char' => $message->getChar(),
         'context' => implode("\n", array_slice(
           $data,
-          max(1, $message->getLine() - self::LINES_OF_CONTEXT),
+          $message->getLine() - self::LINES_OF_CONTEXT,
           self::LINES_OF_CONTEXT * 2 + 1
         )),
         'description' => $message->getDescription(),
