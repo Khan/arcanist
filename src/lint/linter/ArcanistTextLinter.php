@@ -2,8 +2,6 @@
 
 /**
  * Enforces basic text file rules.
- *
- * @group linter
  */
 final class ArcanistTextLinter extends ArcanistLinter {
 
@@ -19,13 +17,46 @@ final class ArcanistTextLinter extends ArcanistLinter {
 
   private $maxLineLength = 80;
 
+  public function getInfoName() {
+    return pht('Basic Text Linter');
+  }
+
+  public function getInfoDescription() {
+    return pht(
+      'Enforces basic text rules like line length, character encoding, '.
+      'and trailing whitespace.');
+  }
+
   public function getLinterPriority() {
     return 0.5;
+  }
+
+  public function getLinterConfigurationOptions() {
+    $options = array(
+      'text.max-line-length' => array(
+        'type' => 'optional int',
+        'help' => pht(
+          'Adjust the maximum line length before a warning is raised. By '.
+          'default, a warning is raised on lines exceeding 80 characters.'),
+      ),
+    );
+
+    return $options + parent::getLinterConfigurationOptions();
   }
 
   public function setMaxLineLength($new_length) {
     $this->maxLineLength = $new_length;
     return $this;
+  }
+
+  public function setLinterConfigurationValue($key, $value) {
+    switch ($key) {
+      case 'text.max-line-length':
+        $this->setMaxLineLength($value);
+        return;
+    }
+
+    return parent::setLinterConfigurationValue($key, $value);
   }
 
   public function getLinterName() {

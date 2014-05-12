@@ -16,6 +16,23 @@ final class ArcanistLesscLinter extends ArcanistExternalLinter {
   const LINT_PARSE_ERROR     = 6;
   const LINT_SYNTAX_ERROR    = 7;
 
+  private $strictMath = false;
+  private $strictUnits = false;
+
+  public function getInfoName() {
+    return pht('Less');
+  }
+
+  public function getInfoURI() {
+    return 'https://lesscss.org/';
+  }
+
+  public function getInfoDescription() {
+    return pht(
+      'Use the `--lint` mode provided by `lessc` to detect errors in Less '.
+      'source files.');
+  }
+
   public function getLinterName() {
     return 'LESSC';
   }
@@ -26,9 +43,31 @@ final class ArcanistLesscLinter extends ArcanistExternalLinter {
 
   public function getLinterConfigurationOptions() {
     return parent::getLinterConfigurationOptions() + array(
-      'lessc.strict-math' => 'optional bool',
-      'lessc.strict-units' => 'optional bool',
+      'lessc.strict-math' => array(
+        'type' => 'optional bool',
+        'help' => pht(
+          'Enable strict math, which only processes mathematical expressions '.
+          'inside extraneous parentheses.'),
+      ),
+      'lessc.strict-units' => array(
+        'type' => 'optional bool',
+        'help' => pht(
+          'Enable strict handling of units in expressions.'),
+      ),
     );
+  }
+
+  public function setLinterConfigurationValue($key, $value) {
+    switch ($key) {
+      case 'lessc.strict-math':
+        $this->strictMath = $value;
+        return;
+      case 'lessc.strict-units':
+        $this->strictUnits = $value;
+        return;
+    }
+
+    return parent::setLinterConfigurationValue($key, $value);
   }
 
   public function getLintNameMap() {
@@ -59,7 +98,7 @@ final class ArcanistLesscLinter extends ArcanistExternalLinter {
   }
 
   public function getInstallInstructions() {
-    return pht('Install lessc using `npm install -g lessc`.');
+    return pht('Install lessc using `npm install -g less`.');
   }
 
   public function shouldExpectCommandErrors() {
@@ -81,10 +120,8 @@ final class ArcanistLesscLinter extends ArcanistExternalLinter {
     return array(
       '--lint',
       '--no-color',
-      '--strict-math='.
-        ($this->getConfig('lessc.strict-math') ? 'on' : 'off'),
-      '--strict-units='.
-        ($this->getConfig('lessc.strict-units') ? 'on' : 'off'));
+      '--strict-math='.($this->strictMath ? 'on' : 'off'),
+      '--strict-units='.($this->strictUnits ? 'on' : 'off'));
   }
 
   protected function parseLinterOutput($path, $err, $stdout, $stderr) {

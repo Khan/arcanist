@@ -2,10 +2,21 @@
 
 /**
  * Uses JSHint to detect errors and potential problems in JavaScript code.
- *
- * @group linter
  */
 final class ArcanistJSHintLinter extends ArcanistExternalLinter {
+
+  public function getInfoName() {
+    return 'JSHint';
+  }
+
+  public function getInfoURI() {
+    return 'http://www.jshint.com';
+  }
+
+  public function getInfoDescription() {
+    return pht(
+      'Use `jshint` to detect issues with Javascript source files.');
+  }
 
   public function getLinterName() {
     return 'JSHint';
@@ -24,9 +35,8 @@ final class ArcanistJSHintLinter extends ArcanistExternalLinter {
   }
 
   public function getDefaultBinary() {
-    $config = $this->getEngine()->getConfigurationManager();
-    $prefix = $config->getConfigFromAnySource('lint.jshint.prefix');
-    $bin = $config->getConfigFromAnySource('lint.jshint.bin', 'jshint');
+    $prefix = $this->getDeprecatedConfiguration('lint.jshint.prefix');
+    $bin = $this->getDeprecatedConfiguration('lint.jshint.bin', 'jshint');
 
     if ($prefix) {
       return $prefix.'/'.$bin;
@@ -70,12 +80,11 @@ final class ArcanistJSHintLinter extends ArcanistExternalLinter {
   }
 
   protected function getDefaultFlags() {
-    $config_manager = $this->getEngine()->getConfigurationManager();
-    $options = $config_manager->getConfigFromAnySource(
+    $options = $this->getDeprecatedConfiguration(
       'lint.jshint.options',
       array());
 
-    $config = $config_manager->getConfigFromAnySource('lint.jshint.config');
+    $config = $this->getDeprecatedConfiguration('lint.jshint.config');
     if ($config) {
       $options[] = '--config='.$config;
     }

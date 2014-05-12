@@ -5,6 +5,15 @@
  * errors and potential problems in XML files.
  */
 final class ArcanistXMLLinter extends ArcanistLinter {
+
+  public function getInfoName() {
+    return pht('SimpleXML Linter');
+  }
+
+  public function getInfoDescription() {
+    return pht('Uses SimpleXML to detect formatting errors in XML files.');
+  }
+
   public function getLinterName() {
     return 'XML';
   }
@@ -19,10 +28,6 @@ final class ArcanistXMLLinter extends ArcanistLinter {
 
   public function getCacheVersion() {
     return LIBXML_VERSION;
-  }
-
-  public function getLintMessageName($code) {
-    return 'LibXML Error';
   }
 
   public function lintPath($path) {
@@ -40,7 +45,7 @@ final class ArcanistXMLLinter extends ArcanistLinter {
       $message->setLine($error->line);
       $message->setChar($error->column ? $error->column : null);
       $message->setCode($this->getLintMessageFullCode($error->code));
-      $message->setName($this->getLintMessageName($error->code));
+      $message->setName('LibXML Error');
       $message->setDescription(trim($error->message));
 
       switch ($error->level) {

@@ -150,7 +150,7 @@ abstract class ArcanistExternalLinter extends ArcanistFutureLinter {
    * @task bin
    */
   final public function setFlags($flags) {
-    $this->flags = (array) $flags;
+    $this->flags = (array)$flags;
     return $this;
   }
 
@@ -324,7 +324,7 @@ abstract class ArcanistExternalLinter extends ArcanistFutureLinter {
    * @return string Command to execute the raw linter.
    * @task exec
    */
-  protected function getExecutableCommand() {
+  final protected function getExecutableCommand() {
     $this->checkBinaryConfiguration();
 
     $interpreter = null;
@@ -351,7 +351,7 @@ abstract class ArcanistExternalLinter extends ArcanistFutureLinter {
    * @return list<string> Composed flags.
    * @task exec
    */
-  protected function getCommandFlags() {
+  final protected function getCommandFlags() {
     $mandatory_flags = $this->getMandatoryFlags();
     if (!is_array($mandatory_flags)) {
       phutil_deprecated(
@@ -381,11 +381,20 @@ abstract class ArcanistExternalLinter extends ArcanistFutureLinter {
     }
   }
 
-  public function getVersion() {
-    return null;
+
+  /**
+   * Prepare the path to be added to the command string.
+   *
+   * This method is expected to return an already escaped string.
+   *
+   * @param string Path to the file being linted
+   * @return string The command-ready file argument
+   */
+  protected function getPathArgumentForLinterFuture($path) {
+    return csprintf('%s', $path);
   }
 
-  protected function buildFutures(array $paths) {
+  final protected function buildFutures(array $paths) {
     $executable = $this->getExecutableCommand();
 
     $bin = csprintf('%C %Ls', $executable, $this->getCommandFlags());
@@ -401,7 +410,8 @@ abstract class ArcanistExternalLinter extends ArcanistFutureLinter {
       } else {
         // TODO: In commit hook mode, we need to do more handling here.
         $disk_path = $this->getEngine()->getFilePathOnDisk($path);
-        $future = new ExecFuture('%C %s', $bin, $disk_path);
+        $path_argument = $this->getPathArgumentForLinterFuture($disk_path);
+        $future = new ExecFuture('%C %C', $bin, $path_argument);
       }
 
       $futures[$path] = $future;
@@ -410,7 +420,7 @@ abstract class ArcanistExternalLinter extends ArcanistFutureLinter {
     return $futures;
   }
 
-  protected function resolveFuture($path, Future $future) {
+  final protected function resolveFuture($path, Future $future) {
     list($err, $stdout, $stderr) = $future->resolve();
     if ($err && !$this->shouldExpectCommandErrors()) {
       $future->resolvex();
@@ -432,15 +442,33 @@ abstract class ArcanistExternalLinter extends ArcanistFutureLinter {
     }
   }
 
-
   public function getLinterConfigurationOptions() {
     $options = array(
-      'bin' => 'optional string | list<string>',
-      'flags' => 'optional list<string>',
+      'bin' => array(
+        'type' => 'optional string | list<string>',
+        'help' => pht(
+          'Specify a string (or list of strings) identifying the binary '.
+          'which should be invoked to execute this linter. This overrides '.
+          'the default binary. If you provide a list of possible binaries, '.
+          'the first one which exists will be used.')
+      ),
+      'flags' => array(
+        'type' => 'optional list<string>',
+        'help' => pht(
+          'Provide a list of additional flags to pass to the linter on the '.
+          'command line.'),
+      ),
     );
 
     if ($this->shouldUseInterpreter()) {
-      $options['interpreter'] = 'optional string | list<string>';
+      $options['interpreter'] = array(
+        'type' => 'optional string | list<string>',
+        'help' => pht(
+          'Specify a string (or list of strings) identifying the interpreter '.
+          'which should be used to invoke the linter binary. If you provide '.
+          'a list of possible interpreters, the first one that exists '.
+          'will be used.'),
+      );
     }
 
     return $options + parent::getLinterConfigurationOptions();

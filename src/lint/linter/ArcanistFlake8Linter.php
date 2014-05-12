@@ -3,10 +3,22 @@
 /**
  * Uses "flake8" to detect various errors in Python code.
  * Requires version 1.7.0 or newer of flake8.
- *
- * @group linter
  */
 final class ArcanistFlake8Linter extends ArcanistExternalLinter {
+
+  public function getInfoName() {
+    return 'Flake8';
+  }
+
+  public function getInfoURI() {
+    return 'https://pypi.python.org/pypi/flake8';
+  }
+
+  public function getInfoDescription() {
+    return pht(
+      'Uses `flake8` to run several linters (PyFlakes, pep8, and a McCabe '.
+      'complexity checker) on Python source files.');
+  }
 
   public function getLinterName() {
     return 'flake8';
@@ -17,21 +29,18 @@ final class ArcanistFlake8Linter extends ArcanistExternalLinter {
   }
 
   public function getDefaultFlags() {
-    // TODO: Deprecated.
-    $config = $this->getEngine()->getConfigurationManager();
-    return $config->getConfigFromAnySource('lint.flake8.options', array());
+    return $this->getDeprecatedConfiguration('lint.flake8.options', array());
   }
 
   public function getDefaultBinary() {
-    $config = $this->getEngine()->getConfigurationManager();
-    $prefix = $config->getConfigFromAnySource('lint.flake8.prefix');
-    $bin = $config->getConfigFromAnySource('lint.flake8.bin', 'flake8');
+    $prefix = $this->getDeprecatedConfiguration('lint.flake8.prefix');
+    $bin = $this->getDeprecatedConfiguration('lint.flake8.bin', 'flake8');
 
-    if ($prefix || ($bin != 'flake8')) {
+    if ($prefix) {
       return $prefix.'/'.$bin;
+    } else {
+      return $bin;
     }
-
-    return 'flake8';
   }
 
   public function getVersion() {

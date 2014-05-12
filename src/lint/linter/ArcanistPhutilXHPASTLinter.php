@@ -1,22 +1,23 @@
 <?php
 
-/**
- * @group linter
- */
 final class ArcanistPhutilXHPASTLinter extends ArcanistBaseXHPASTLinter {
 
   const LINT_ARRAY_COMBINE           = 2;
   const LINT_DEPRECATED_FUNCTION     = 3;
   const LINT_UNSAFE_DYNAMIC_STRING   = 4;
 
-  private $xhpastLinter;
   private $deprecatedFunctions = array();
   private $dynamicStringFunctions = array();
   private $dynamicStringClasses = array();
 
-  public function setXHPASTLinter(ArcanistXHPASTLinter $linter) {
-    $this->xhpastLinter = $linter;
-    return $this;
+  public function getInfoName() {
+    return 'XHPAST/libphutil Lint';
+  }
+
+  public function getInfoDescription() {
+    return pht(
+      'Use XHPAST to run libphutil-specific rules on a PHP library. This '.
+      'linter is intended for use in Phabricator libraries and extensions.');
   }
 
   public function setDeprecatedFunctions($map) {
@@ -32,15 +33,6 @@ final class ArcanistPhutilXHPASTLinter extends ArcanistBaseXHPASTLinter {
   public function setDynamicStringClasses($map) {
     $this->dynamicStringClasses = $map;
     return $this;
-  }
-
-  public function setEngine(ArcanistLintEngine $engine) {
-    if (!$this->xhpastLinter) {
-      throw new Exception(
-        'Call setXHPASTLinter() before using ArcanistPhutilXHPASTLinter.');
-    }
-    $this->xhpastLinter->setEngine($engine);
-    return parent::setEngine($engine);
   }
 
   public function getLintNameMap() {
@@ -64,6 +56,10 @@ final class ArcanistPhutilXHPASTLinter extends ArcanistBaseXHPASTLinter {
     return 'PHLXHP';
   }
 
+  public function getLinterConfigurationName() {
+    return 'phutil-xhpast';
+  }
+
   public function getCacheVersion() {
     $version = '2';
     $path = xhpast_get_binary_path();
@@ -73,17 +69,48 @@ final class ArcanistPhutilXHPASTLinter extends ArcanistBaseXHPASTLinter {
     return $version;
   }
 
-  protected function buildFutures(array $paths) {
-    return $this->xhpastLinter->buildFutures($paths);
+  public function getLinterConfigurationOptions() {
+    $options = array(
+      'phutil-xhpast.deprecated.functions' => array(
+        'type' => 'optional map<string, string>',
+        'help' => pht(
+          'Functions which should should be considered deprecated.'),
+      ),
+      'phutil-xhpast.dynamic-string.functions' => array(
+        'type' => 'optional map<string, string>',
+        'help' => pht(
+          'Functions which should should not be used because they represent '.
+          'the unsafe usage of dynamic strings.'),
+      ),
+      'phutil-xhpast.dynamic-string.classes' => array(
+        'type' => 'optional map<string, string>',
+        'help' => pht(
+          'Classes which should should not be used because they represent the '.
+          'unsafe usage of dynamic strings.'),
+      ),
+    );
+
+    return $options + parent::getLinterConfigurationOptions();
   }
 
-  public function willLintPath($path) {
-    $this->xhpastLinter->willLintPath($path);
-    return parent::willLintPath($path);
+  public function setLinterConfigurationValue($key, $value) {
+    switch ($key) {
+      case 'phutil-xhpast.deprecated.functions':
+        $this->setDeprecatedFunctions($value);
+        return;
+      case 'phutil-xhpast.dynamic-string.functions':
+        $this->setDynamicStringFunctions($value);
+        return;
+      case 'phutil-xhpast.dynamic-string.classes':
+        $this->setDynamicStringClasses($value);
+        return;
+    }
+
+    return parent::setLinterConfigurationValue($key, $value);
   }
 
   protected function resolveFuture($path, Future $future) {
-    $tree = $this->xhpastLinter->getXHPASTTreeForPath($path);
+    $tree = $this->getXHPASTLinter()->getXHPASTTreeForPath($path);
     if (!$tree) {
       return;
     }
@@ -107,7 +134,7 @@ final class ArcanistPhutilXHPASTLinter extends ArcanistBaseXHPASTLinter {
   }
 
 
-  private function lintUnsafeDynamicString($root) {
+  private function lintUnsafeDynamicString(XHPASTNode $root) {
     $safe = $this->dynamicStringFunctions + array(
       'pht' => 0,
 
@@ -175,7 +202,7 @@ final class ArcanistPhutilXHPASTLinter extends ArcanistBaseXHPASTLinter {
   }
 
 
-  private function lintArrayCombine($root) {
+  private function lintArrayCombine(XHPASTNode $root) {
     $function_calls = $root->selectDescendantsOfType('n_FUNCTION_CALL');
     foreach ($function_calls as $call) {
       $name = $call->getChildByIndex(0)->getConcreteString();
@@ -200,7 +227,7 @@ final class ArcanistPhutilXHPASTLinter extends ArcanistBaseXHPASTLinter {
     }
   }
 
-  private function lintDeprecatedFunctions($root) {
+  private function lintDeprecatedFunctions(XHPASTNode $root) {
     $map = $this->deprecatedFunctions;
 
     $function_calls = $root->selectDescendantsOfType('n_FUNCTION_CALL');

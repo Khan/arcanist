@@ -2,12 +2,8 @@
 
 /**
  * Lint engine which enforces libphutil rules.
- *
- * TODO: Deal with PhabricatorLintEngine extending this and then finalize it.
- *
- * @group linter
  */
-class PhutilLintEngine extends ArcanistLintEngine {
+final class PhutilLintEngine extends ArcanistLintEngine {
 
   public function buildLinters() {
     $linters = array();
@@ -58,7 +54,6 @@ class PhutilLintEngine extends ArcanistLintEngine {
     $linters[] = $xhpast_linter;
 
     $linters[] = id(new ArcanistPhutilXHPASTLinter())
-      ->setXHPASTLinter($xhpast_linter)
       ->setPaths($php_paths);
 
     $merge_conflict_linter = id(new ArcanistMergeConflictLinter());

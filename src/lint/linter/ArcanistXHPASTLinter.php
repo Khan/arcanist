@@ -2,13 +2,8 @@
 
 /**
  * Uses XHPAST to apply lint rules to PHP.
- *
- * @group linter
  */
 final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
-
-  private $futures = array();
-  private $trees = array();
 
   const LINT_PHP_SYNTAX_ERROR          = 1;
   const LINT_UNABLE_TO_PARSE           = 2;
@@ -48,6 +43,21 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
   const LINT_CLOSING_DECL_PAREN        = 38;
   const LINT_REUSED_ITERATOR_REFERENCE = 39;
   const LINT_KEYWORD_CASING            = 40;
+
+  private $naminghook;
+  private $switchhook;
+
+  public function getInfoName() {
+    return 'XHPAST Lint';
+  }
+
+  public function getInfoDescription() {
+    return pht(
+      'Use XHPAST to enforce Phabricator coding conventions on PHP source '.
+      'files. This linter is intended for use in Phabricator libraries and '.
+      'extensions, and enforces some Phabricator-specific style rules. It '.
+      'may not work well for general PHP source.');
+  }
 
   public function getLintNameMap() {
     return array(
@@ -96,6 +106,10 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
     return 'XHP';
   }
 
+  public function getLinterConfigurationName() {
+    return 'xhpast';
+  }
+
   public function getLintSeverityMap() {
     $disabled = ArcanistLintSeverity::SEVERITY_DISABLED;
     $advice   = ArcanistLintSeverity::SEVERITY_ADVICE;
@@ -130,36 +144,34 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
     );
   }
 
-  protected function buildFutures(array $paths) {
-    foreach ($paths as $path) {
-      if (!isset($this->futures[$path])) {
-        $this->futures[$path] = xhpast_get_parser_future($this->getData($path));
-      }
-    }
-    return array_select_keys($this->futures, $paths);
+  public function getLinterConfigurationOptions() {
+    return parent::getLinterConfigurationOptions() + array(
+      'xhpast.naminghook' => array(
+        'type' => 'optional string',
+        'help' => pht(
+          'Name of a concrete subclass of ArcanistXHPASTLintNamingHook which '.
+          'enforces more granular naming convention rules for symbols.'),
+      ),
+      'xhpast.switchhook' => array(
+        'type' => 'optional string',
+        'help' => pht(
+          'Name of a concrete subclass of ArcanistXHPASTLintSwitchHook which '.
+          'tunes the analysis of switch() statements for this linter.'),
+      ),
+    );
   }
 
-  public function getXHPASTTreeForPath($path) {
-    if (!array_key_exists($path, $this->trees)) {
-      $this->trees[$path] = null;
-      try {
-        $this->trees[$path] = XHPASTTree::newFromDataAndResolvedExecFuture(
-          $this->getData($path),
-          $this->futures[$path]->resolve());
-        $root = $this->trees[$path]->getRootNode();
-        $root->buildSelectCache();
-        $root->buildTokenCache();
-      } catch (XHPASTSyntaxErrorException $ex) {
-        $this->raiseLintAtLine(
-          $ex->getErrorLine(),
-          1,
-          self::LINT_PHP_SYNTAX_ERROR,
-          'This file contains a syntax error: '.$ex->getMessage());
-      } catch (Exception $ex) {
-        $this->raiseLintAtPath(self::LINT_UNABLE_TO_PARSE, $ex->getMessage());
-      }
+  public function setLinterConfigurationValue($key, $value) {
+    switch ($key) {
+      case 'xhpast.naminghook':
+        $this->naminghook = $value;
+        return;
+      case 'xhpast.switchhook':
+        $this->switchhook = $value;
+        return;
     }
-    return $this->trees[$path];
+
+    return parent::setLinterConfigurationValue($key, $value);
   }
 
   public function getCacheVersion() {
@@ -174,6 +186,16 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
   protected function resolveFuture($path, Future $future) {
     $tree = $this->getXHPASTTreeForPath($path);
     if (!$tree) {
+      $ex = $this->getXHPASTExceptionForPath($path);
+      if ($ex instanceof XHPASTSyntaxErrorException) {
+        $this->raiseLintAtLine(
+          $ex->getErrorLine(),
+          1,
+          self::LINT_PHP_SYNTAX_ERROR,
+          'This file contains a syntax error: '.$ex->getMessage());
+      } else if ($ex instanceof Exception) {
+        $this->raiseLintAtPath(self::LINT_UNABLE_TO_PARSE, $ex->getMessage());
+      }
       return;
     }
 
@@ -487,8 +509,9 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
     $hook_obj = null;
     $working_copy = $this->getEngine()->getWorkingCopy();
     if ($working_copy) {
-      $hook_class = $working_copy->getProjectConfig('lint.xhpast.switchhook');
-      $hook_class = $this->getConfig('switchhook', $hook_class);
+      $hook_class = $this->switchhook
+        ? $this->switchhook
+        : $this->getDeprecatedConfiguration('lint.xhpast.switchhook');
       if ($hook_class) {
         $hook_obj = newv($hook_class, array());
         assert_instances_of(array($hook_obj), 'ArcanistXHPASTLintSwitchHook');
@@ -1696,7 +1719,9 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
     if ($working_copy) {
       // If a naming hook is configured, give it a chance to override the
       // default results for all the symbol names.
-      $hook_class = $working_copy->getProjectConfig('lint.xhpast.naminghook');
+      $hook_class = $this->naminghook
+        ? $this->naminghook
+        : $working_copy->getProjectConfig('lint.xhpast.naminghook');
       if ($hook_class) {
         $hook_obj = newv($hook_class, array());
         foreach ($names as $k => $name_attrs) {

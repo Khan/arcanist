@@ -2,10 +2,20 @@
 
 /**
  * Uses `ruby` to detect various errors in Ruby code.
- *
- * @group linter
  */
 final class ArcanistRubyLinter extends ArcanistExternalLinter {
+
+  public function getInfoURI() {
+    return 'https://www.ruby-lang.org/';
+  }
+
+  public function getInfoName() {
+    return pht('Ruby');
+  }
+
+  public function getInfoDescription() {
+    return pht('Use `ruby` to check for syntax errors in Ruby source files.');
+  }
 
   public function getLinterName() {
     return 'RUBY';
@@ -16,9 +26,7 @@ final class ArcanistRubyLinter extends ArcanistExternalLinter {
   }
 
   public function getDefaultBinary() {
-    // TODO: Deprecation warning.
-    $config = $this->getEngine()->getConfigurationManager();
-    $prefix = $config->getConfigFromAnySource('lint.ruby.prefix');
+    $prefix = $this->getDeprecatedConfiguration('lint.ruby.prefix');
     if ($prefix !== null) {
       $ruby_bin = $prefix.'ruby';
     }

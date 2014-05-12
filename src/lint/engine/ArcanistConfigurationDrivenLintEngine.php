@@ -2,8 +2,6 @@
 
 final class ArcanistConfigurationDrivenLintEngine extends ArcanistLintEngine {
 
-  private $debugMode;
-
   public function buildLinters() {
     $working_copy = $this->getWorkingCopy();
     $config_path = $working_copy->getProjectPath('.arclint');
@@ -27,11 +25,12 @@ final class ArcanistConfigurationDrivenLintEngine extends ArcanistLintEngine {
     PhutilTypeSpec::checkMap(
       $config,
       array(
+        'exclude' => 'optional string | list<string>',
         'linters' => 'map<string, map<string, wild>>',
-        'debug'   => 'optional bool',
       ));
 
-    $this->debugMode = idx($config, 'debug', false);
+    $global_exclude = (array)idx($config, 'exclude', array());
+    $this->validateRegexps($global_exclude);
 
     $built_linters = array();
     $all_paths = $this->getPaths();
@@ -48,6 +47,16 @@ final class ArcanistConfigurationDrivenLintEngine extends ArcanistLintEngine {
         $linter = clone $linters[$type];
         $linter->setEngine($this);
         $more = $linter->getLinterConfigurationOptions();
+
+        foreach ($more as $key => $option_spec) {
+          PhutilTypeSpec::checkMap(
+            $option_spec,
+            array(
+              'type' => 'string',
+              'help' => 'string',
+            ));
+          $more[$key] = $option_spec['type'];
+        }
       } else {
         // We'll raise an error below about the invalid "type" key.
         $linter = null;
@@ -84,10 +93,15 @@ final class ArcanistConfigurationDrivenLintEngine extends ArcanistLintEngine {
       $this->validateRegexps($include, $name, 'include');
       $this->validateRegexps($exclude, $name, 'exclude');
 
-      $this->debugLog('Examining paths for linter "%s".', $name);
-      $paths = $this->matchPaths($all_paths, $include, $exclude);
-      $this->debugLog(
-        'Found %d matching paths for linter "%s".',
+      $console = PhutilConsole::getConsole();
+      $console->writeLog("Examining paths for linter \"%s\".\n", $name);
+      $paths = $this->matchPaths(
+        $all_paths,
+        $include,
+        $exclude,
+        $global_exclude);
+      $console->writeLog(
+        "Found %d matching paths for linter \"%s\".\n",
         count($paths),
         $name);
 
@@ -130,80 +144,105 @@ final class ArcanistConfigurationDrivenLintEngine extends ArcanistLintEngine {
     return $map;
   }
 
-  private function matchPaths(array $paths, array $include, array $exclude) {
-    $debug = $this->debugMode;
+  private function matchPaths(
+    array $paths,
+    array $include,
+    array $exclude,
+    array $global_exclude) {
+
+    $console = PhutilConsole::getConsole();
 
     $match = array();
     foreach ($paths as $path) {
-      $this->debugLog("Examining path '%s'...", $path);
+      $console->writeLog("Examining path '%s'...\n", $path);
 
       $keep = false;
       if (!$include) {
         $keep = true;
-        $this->debugLog(
-          "  Including path by default because there is no 'include' rule.");
+        $console->writeLog(
+          "  Including path by default because there is no 'include' rule.\n");
       } else {
-        $this->debugLog('  Testing "include" rules.');
+        $console->writeLog("  Testing \"include\" rules.\n");
         foreach ($include as $rule) {
           if (preg_match($rule, $path)) {
             $keep = true;
-            $this->debugLog('  Path matches include rule: %s', $rule);
+            $console->writeLog("  Path matches include rule: %s\n", $rule);
             break;
           } else {
-            $this->debugLog('  Path does not match include rule: %s', $rule);
+            $console->writeLog(
+              "  Path does not match include rule: %s\n",
+              $rule);
           }
         }
       }
 
       if (!$keep) {
-        $this->debugLog('  Path does not match any include rules, discarding.');
+        $console->writeLog(
+          "  Path does not match any include rules, discarding.\n");
         continue;
       }
 
       if ($exclude) {
-        $this->debugLog('  Testing "exclude" rules.');
+        $console->writeLog("  Testing \"exclude\" rules.\n");
         foreach ($exclude as $rule) {
           if (preg_match($rule, $path)) {
-            $this->debugLog('  Path matches "exclude" rule: %s', $rule);
+            $console->writeLog("  Path matches \"exclude\" rule: %s\n", $rule);
             continue 2;
           } else {
-            $this->debugLog('  Path does not match "exclude" rule: %s', $rule);
+            $console->writeLog(
+              "  Path does not match \"exclude\" rule: %s\n",
+              $rule);
           }
         }
       }
 
-      $this->debugLog('  Path matches.');
+      if ($global_exclude) {
+        $console->writeLog("  Testing global \"exclude\" rules.\n");
+        foreach ($global_exclude as $rule) {
+          if (preg_match($rule, $path)) {
+            $console->writeLog(
+              "  Path matches global \"exclude\" rule: %s\n",
+              $rule);
+            continue 2;
+          } else {
+            $console->writeLog(
+              "  Path does not match global \"exclude\" rule: %s\n",
+              $rule);
+          }
+        }
+      }
+
+      $console->writeLog("  Path matches.\n");
       $match[] = $path;
     }
 
     return $match;
   }
 
-  private function validateRegexps(array $regexps, $linter, $config) {
+  private function validateRegexps(
+    array $regexps,
+    $linter = null,
+    $config = null) {
+
     foreach ($regexps as $regexp) {
       $ok = @preg_match($regexp, '');
       if ($ok === false) {
-        throw new Exception(
-          pht(
-            'Regular expression "%s" (in "%s" configuration for linter "%s") '.
-            'is not a valid regular expression.',
-            $regexp,
-            $config,
-            $linter));
+        if ($linter) {
+          throw new Exception(
+            pht(
+              'Regular expression "%s" (in "%s" configuration for linter '.
+              '"%s") is not a valid regular expression.',
+              $regexp,
+              $config,
+              $linter));
+        } else {
+          throw new Exception(
+            pht(
+              'Regular expression "%s" is not a valid regular expression.',
+              $regexp));
+        }
       }
     }
   }
-
-  private function debugLog($pattern /* , $arg, ... */) {
-    if (!$this->debugMode) {
-      return;
-    }
-
-    $console = PhutilConsole::getConsole();
-    $argv = func_get_args();
-    $argv[0] .= "\n";
-    call_user_func_array(array($console, 'writeErr'), $argv);
-  }
-
 
 }

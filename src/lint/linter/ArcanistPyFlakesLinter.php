@@ -2,10 +2,22 @@
 
 /**
  * Uses "PyFlakes" to detect various errors in Python code.
- *
- * @group linter
  */
 final class ArcanistPyFlakesLinter extends ArcanistExternalLinter {
+
+  public function getInfoURI() {
+    return 'https://pypi.python.org/pypi/pyflakes';
+  }
+
+  public function getInfoName() {
+    return pht('PyFlakes');
+  }
+
+  public function getInfoDescription() {
+    return pht(
+      'PyFlakes is a simple program which checks Python source files for '.
+      'errors.');
+  }
 
   public function getLinterName() {
     return 'PYFLAKES';
@@ -16,9 +28,8 @@ final class ArcanistPyFlakesLinter extends ArcanistExternalLinter {
   }
 
   public function getDefaultBinary() {
-    $config = $this->getEngine()->getConfigurationManager();
-    $prefix = $config->getConfigFromAnySource('lint.pyflakes.prefix');
-    $bin = $config->getConfigFromAnySource('lint.pyflakes.bin', 'pyflakes');
+    $prefix = $this->getDeprecatedConfiguration('lint.pyflakes.prefix');
+    $bin = $this->getDeprecatedConfiguration('lint.pyflakes.bin', 'pyflakes');
 
     if ($prefix) {
       return $prefix.'/'.$bin;

@@ -2,10 +2,22 @@
 
 /**
  * Uses "pep8.py" to enforce PEP8 rules for Python.
- *
- * @group linter
  */
 final class ArcanistPEP8Linter extends ArcanistExternalLinter {
+
+  public function getInfoName() {
+    return 'pep8';
+  }
+
+  public function getInfoURI() {
+    return 'https://pypi.python.org/pypi/pep8';
+  }
+
+  public function getInfoDescription() {
+    return pht(
+      'pep8 is a tool to check your Python code against some of the '.
+      'style conventions in PEP 8.');
+  }
 
   public function getLinterName() {
     return 'PEP8';
@@ -16,11 +28,7 @@ final class ArcanistPEP8Linter extends ArcanistExternalLinter {
   }
 
   public function getDefaultFlags() {
-    // TODO: Warn that all of this is deprecated.
-    $config = $this->getEngine()->getConfigurationManager();
-    return $config->getConfigFromAnySource(
-      'lint.pep8.options',
-      $this->getConfig('options', array()));
+    return $this->getDeprecatedConfiguration('lint.pep8.options', array());
   }
 
   public function shouldUseInterpreter() {
@@ -36,12 +44,9 @@ final class ArcanistPEP8Linter extends ArcanistExternalLinter {
       return 'pep8';
     }
 
-    $config = $this->getEngine()->getConfigurationManager();
-    $old_prefix = $config->getConfigFromAnySource('lint.pep8.prefix');
-    $old_bin = $config->getConfigFromAnySource('lint.pep8.bin');
-
+    $old_prefix = $this->getDeprecatedConfiguration('lint.pep8.prefix');
+    $old_bin = $this->getDeprecatedConfiguration('lint.pep8.bin');
     if ($old_prefix || $old_bin) {
-      // TODO: Deprecation warning.
       $old_bin = nonempty($old_bin, 'pep8');
       return $old_prefix.'/'.$old_bin;
     }
