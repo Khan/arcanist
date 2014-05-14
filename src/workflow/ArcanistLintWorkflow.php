@@ -459,6 +459,8 @@ EOTEXT
         break;
       case 'xml':
         $renderer = new ArcanistLintCheckstyleXMLRenderer();
+        $prompt_patches = false;
+        $apply_patches = $this->getArgument('apply-patches');
         break;
       default:
         $renderer = new ArcanistLintConsoleRenderer();
@@ -467,6 +469,7 @@ EOTEXT
     }
 
     $all_autofix = true;
+    $console->writeOut('%s', $renderer->renderPreamble());
 
     foreach ($results as $result) {
       $result_all_autofix = $result->isAllAutofix();
