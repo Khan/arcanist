@@ -44,6 +44,8 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
   const LINT_REUSED_ITERATOR_REFERENCE = 39;
   const LINT_KEYWORD_CASING            = 40;
   const LINT_DOUBLE_QUOTE              = 41;
+  const LINT_ELSEIF_USAGE              = 42;
+  const LINT_SEMICOLON_SPACING         = 43;
 
   private $naminghook;
   private $switchhook;
@@ -101,6 +103,8 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
       self::LINT_REUSED_ITERATOR_REFERENCE => 'Reuse of Iterator References',
       self::LINT_KEYWORD_CASING            => 'Keyword Conventions',
       self::LINT_DOUBLE_QUOTE              => 'Unnecessary Double Quotes',
+      self::LINT_ELSEIF_USAGE              => 'ElseIf Usage',
+      self::LINT_SEMICOLON_SPACING         => 'Semicolon Spacing',
     );
   }
 
@@ -135,6 +139,8 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
       self::LINT_REUSED_ITERATOR_REFERENCE => $warning,
       self::LINT_KEYWORD_CASING            => $warning,
       self::LINT_DOUBLE_QUOTE              => $advice,
+      self::LINT_ELSEIF_USAGE              => $advice,
+      self::LINT_SEMICOLON_SPACING         => $advice,
 
       // This is disabled by default because it implies a very strict policy
       // which isn't necessary in the general case.
@@ -249,6 +255,8 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
       'lintClosingDeclarationParen' => self::LINT_CLOSING_DECL_PAREN,
       'lintKeywordCasing' => self::LINT_KEYWORD_CASING,
       'lintStrings' => self::LINT_DOUBLE_QUOTE,
+      'lintElseIfStatements' => self::LINT_ELSEIF_USAGE,
+      'lintSemicolons' => self::LINT_SEMICOLON_SPACING,
     );
 
     foreach ($method_codes as $method => $codes) {
@@ -2389,15 +2397,22 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
         // Double quoted strings are allowed when the string contains the
         // following characters.
         static $allowed_chars = array(
-          '\0',
           '\n',
           '\r',
-          '\f',
           '\t',
           '\v',
-          '\x',
-          '\b',
+          '\e',
+          '\f',
           '\'',
+          '\0',
+          '\1',
+          '\2',
+          '\3',
+          '\4',
+          '\5',
+          '\6',
+          '\7',
+          '\x',
         );
 
         $contains_special_chars = false;
@@ -2413,7 +2428,7 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
           $valid = true;
         } else if (!$contains_special_chars && !$single_quoted) {
           $invalid_nodes[] = $string;
-          $fixes[$string->getID()] = "'".$contents."'";
+          $fixes[$string->getID()] = "'".str_replace('\"', '"', $contents)."'";
         }
       }
 
@@ -2427,6 +2442,34 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
               'prefer single quotes.'),
             $fixes[$invalid_node->getID()]);
         }
+      }
+    }
+  }
+
+  protected function lintElseIfStatements(XHPASTNode $root) {
+    $tokens = $root->selectTokensOfType('T_ELSEIF');
+
+    foreach ($tokens as $token) {
+      $this->raiseLintAtToken(
+        $token,
+        self::LINT_ELSEIF_USAGE,
+        pht('Usage of `else if` is preferred over `elseif`.'),
+        'else if');
+    }
+  }
+
+  protected function lintSemicolons(XHPASTNode $root) {
+    $tokens = $root->selectTokensOfType(';');
+
+    foreach ($tokens as $token) {
+      $prev = $token->getPrevToken();
+
+      if ($prev->isAnyWhitespace()) {
+        $this->raiseLintAtToken(
+          $prev,
+          self::LINT_SEMICOLON_SPACING,
+          pht('Space found before semicolon.'),
+          '');
       }
     }
   }
