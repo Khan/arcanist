@@ -191,7 +191,7 @@ EOTEXT
 
     if ($this->useSquash) {
       $this->rebase();
-      $this->squash();
+      $this->squash();      
     } else {
       $this->merge();
     }
@@ -428,9 +428,9 @@ EOTEXT
 
     if (!count($revisions)) {
       throw new ArcanistUsageException(pht(
-        "arc can not identify which revision exists on %s '%s'. Update the '.
-        'revision with recent changes to synchronize the %s name and hashes, '.
-        'or use 'arc amend' to amend the commit message at HEAD, or use ".
+        "arc can not identify which revision exists on %s '%s'. Update the ".
+        "revision with recent changes to synchronize the %s name and hashes, ".
+        "or use 'arc amend' to amend the commit message at HEAD, or use ".
         "'--revision <id>' to select a revision explicitly.",
         $this->branchType,
         $this->branch,
@@ -936,6 +936,10 @@ EOTEXT
         $repository_api->execxLocal(
           'commit -F %s',
           $this->messageFile);
+        if (phutil_is_windows()) {
+          // Occasionally on large repositories on Windows, Git can exit with an unclean working copy here.  This prevents reverts from being pushed to the remote when this occurs.
+          $this->requireCleanWorkingCopy();
+        }
       } else if ($this->isHg) {
         // hg rebase produces a commit earlier as part of rebase
         if (!$this->useSquash) {
