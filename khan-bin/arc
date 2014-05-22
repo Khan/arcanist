@@ -152,8 +152,8 @@ def _conduit_call(arc_root, conduit_name, json_input={}):
                          stdout=subprocess.PIPE, stdin=subprocess.PIPE)
     conduit_stdout = p.communicate(input=json.dumps(json_input))[0]
     if p.returncode != 0:
-        raise RuntimeError('Error getting %s info from phabricator'
-                           % conduit_name)
+        raise RuntimeError('Error getting %s info from phabricator: %s'
+                           % (conduit_name, conduit_stdout))
 
     retval = json.loads(conduit_stdout)
     if retval.get('Error'):
