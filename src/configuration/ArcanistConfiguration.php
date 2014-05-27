@@ -27,6 +27,9 @@ class ArcanistConfiguration {
       // Special-case "arc --help" to behave like "arc help" instead of telling
       // you to type "arc help" without being helpful.
       $command = 'help';
+    } else if ($command == '--version') {
+      // Special-case "arc --version" to behave like "arc version".
+      $command = 'version';
     }
 
     return idx($this->buildAllWorkflows(), $command);
@@ -168,7 +171,7 @@ class ArcanistConfiguration {
   private function raiseUnknownCommand($command, array $maybe = array()) {
     $message = pht("Unknown command '%s'. Try 'arc help'.", $command);
     if ($maybe) {
-      $message .= "\n\n".pht("Did you mean:")."\n";
+      $message .= "\n\n".pht('Did you mean:')."\n";
       sort($maybe);
       foreach ($maybe as $other) {
         $message .= "    ".$other."\n";

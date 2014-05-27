@@ -80,6 +80,9 @@ try {
   }
 
   $configuration_manager = new ArcanistConfigurationManager();
+  if ($custom_arcrc) {
+    $configuration_manager->setUserConfigurationFileLocation($custom_arcrc);
+  }
 
   $global_config = $configuration_manager->readUserArcConfig();
   $system_config = $configuration_manager->readSystemArcConfig();
@@ -141,9 +144,6 @@ try {
       $working_copy);
   }
 
-  if ($custom_arcrc) {
-    $configuration_manager->setUserConfigurationFileLocation($custom_arcrc);
-  }
   $user_config = $configuration_manager->readUserConfigurationFile();
 
   $config_class = $working_copy->getProjectConfig('arcanist_configuration');
@@ -195,8 +195,8 @@ try {
   if ($need_working_copy || $want_working_copy) {
     if ($need_working_copy && !$working_copy->getVCSType()) {
       throw new ArcanistUsageException(
-        "This command must be run in a Git, Mercurial or Subversion working ".
-        "copy.");
+        'This command must be run in a Git, Mercurial or Subversion working '.
+        'copy.');
     }
     $configuration_manager->setWorkingCopyIdentity($working_copy);
   }
@@ -352,7 +352,7 @@ try {
     echo phutil_console_format(
       "**Exception**\n%s\n%s\n",
       $ex->getMessage(),
-      "(Run with --trace for a full exception trace.)");
+      '(Run with --trace for a full exception trace.)');
   }
 
   exit(1);
