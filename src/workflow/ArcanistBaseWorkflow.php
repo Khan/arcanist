@@ -450,18 +450,6 @@ abstract class ArcanistBaseWorkflow extends Phobject {
   }
 
   /**
-   * Deprecated. See @{method:getUserPHID}.
-   *
-   * @deprecated
-   */
-  final public function getUserGUID() {
-    phutil_deprecated(
-      'ArcanistBaseWorkflow::getUserGUID',
-      'This method has been renamed to getUserPHID().');
-    return $this->getUserPHID();
-  }
-
-  /**
    * Return the username for the user once they've authenticated via Conduit.
    *
    * @return string Authenticated username.
@@ -791,7 +779,7 @@ abstract class ArcanistBaseWorkflow extends Phobject {
     if ($this->stashed) {
       $api = $this->getRepositoryAPI();
       $api->unstashChanges();
-      echo pht('Restored stashed changes to the working directory.') . "\n";
+      echo pht('Restored stashed changes to the working directory.')."\n";
     }
   }
 

@@ -16,6 +16,9 @@ final class ArcanistGitAPI extends ArcanistRepositoryAPI {
    */
   const GIT_MAGIC_ROOT_COMMIT = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 
+  private $symbolicHeadCommit;
+  private $resolvedHeadCommit;
+
   public static function newHookAPI($root) {
     return new ArcanistGitAPI($root);
   }
@@ -75,6 +78,23 @@ final class ArcanistGitAPI extends ArcanistRepositoryAPI {
     return !$this->repositoryHasNoCommits;
   }
 
+  /**
+   * Tests if a child commit is descendant of a parent commit.
+   * If child and parent are the same, it returns false.
+   * @param Child commit SHA.
+   * @param Parent commit SHA.
+   * @return bool True if the child is a descendant of the parent.
+   */
+  private function isDescendant($child, $parent) {
+    list($common_ancestor) = $this->execxLocal(
+      'merge-base %s %s',
+      $child,
+      $parent);
+    $common_ancestor = trim($common_ancestor);
+
+    return ($common_ancestor == $parent) && ($common_ancestor != $child);
+  }
+
   public function getLocalCommitInformation() {
     if ($this->repositoryHasNoCommits) {
       // Zero commits.
@@ -87,8 +107,8 @@ final class ArcanistGitAPI extends ArcanistRepositoryAPI {
     } else {
 
       // 2..N commits. We include commits reachable from HEAD which are
-      // not reachable from the relative commit; this is consistent with
-      // user expectations even though it is not actually the diff range.
+      // not reachable from the base commit; this is consistent with user
+      // expectations even though it is not actually the diff range.
       // Particularly:
       //
       //    |
@@ -106,7 +126,38 @@ final class ArcanistGitAPI extends ArcanistRepositoryAPI {
       // this as being the commits X and Y. If we log "B..Y", we only show
       // Y. With "Y --not B", we show X and Y.
 
-      $against = csprintf('%s --not %s', 'HEAD', $this->getBaseCommit());
+
+      if ($this->symbolicHeadCommit !== null) {
+        $base_commit = $this->getBaseCommit();
+        $resolved_base = $this->resolveCommit($base_commit);
+
+        $head_commit = $this->symbolicHeadCommit;
+        $resolved_head = $this->getHeadCommit();
+
+        if (!$this->isDescendant($resolved_head, $resolved_base)) {
+          // NOTE: Since the base commit will have been resolved as the
+          // merge-base of the specified base and the specified HEAD, we can't
+          // easily tell exactly what's wrong with the range.
+
+          // For example, `arc diff HEAD --head HEAD^^^` is invalid because it
+          // is reversed, but resolving the commit "HEAD" will compute its
+          // merge-base with "HEAD^^^", which is "HEAD^^^", so the range will
+          // appear empty.
+
+          throw new ArcanistUsageException(
+            pht(
+              'The specified commit range is empty, backward or invalid: the '.
+              'base (%s) is not an ancestor of the head (%s). You can not '.
+              'diff an empty or reversed commit range.',
+              $base_commit,
+              $head_commit));
+        }
+      }
+
+      $against = csprintf(
+        '%s --not %s',
+        $this->getHeadCommit(),
+        $this->getBaseCommit());
     }
 
     // NOTE: Windows escaping of "%" symbols apparently is inherently broken;
@@ -161,17 +212,26 @@ final class ArcanistGitAPI extends ArcanistRepositoryAPI {
       }
 
       list($err, $merge_base) = $this->execManualLocal(
-        'merge-base %s HEAD',
-        $symbolic_commit);
+        'merge-base %s %s',
+        $symbolic_commit,
+        $this->getHeadCommit());
       if ($err) {
         throw new ArcanistUsageException(
           "Unable to find any git commit named '{$symbolic_commit}' in ".
           "this repository.");
       }
 
-      $this->setBaseCommitExplanation(
-        "it is the merge-base of '{$symbolic_commit}' and HEAD, as you ".
-        "explicitly specified.");
+      if ($this->symbolicHeadCommit === null) {
+        $this->setBaseCommitExplanation(
+          "it is the merge-base of the explicitly specified base commit ".
+          "'{$symbolic_commit}' and HEAD.");
+      } else {
+        $this->setBaseCommitExplanation(
+          "it is the merge-base of the explicitly specified base commit ".
+          "'{$symbolic_commit}' and the explicitly specified head ".
+          "commit '{$this->symbolicHeadCommit}'.");
+      }
+
       return trim($merge_base);
     }
 
@@ -301,6 +361,40 @@ final class ArcanistGitAPI extends ArcanistRepositoryAPI {
     return trim($merge_base);
   }
 
+  public function getHeadCommit() {
+    if ($this->resolvedHeadCommit === null) {
+      $this->resolvedHeadCommit = $this->resolveCommit(
+        coalesce($this->symbolicHeadCommit, 'HEAD'));
+    }
+
+    return $this->resolvedHeadCommit;
+  }
+
+  final public function setHeadCommit($symbolic_commit) {
+    $this->symbolicHeadCommit = $symbolic_commit;
+    $this->reloadCommitRange();
+    return $this;
+  }
+
+  /**
+   * Translates a symbolic commit (like "HEAD^") to a commit identifier.
+   * @param string_symbol commit.
+   * @return string the commit SHA.
+   */
+  private function resolveCommit($symbolic_commit) {
+    list($err, $commit_hash) = $this->execManualLocal(
+      'rev-parse %s',
+      $symbolic_commit);
+
+    if ($err) {
+      throw new ArcanistUsageException(
+        "Unable to find any git commit named '{$symbolic_commit}' in ".
+        "this repository.");
+    }
+
+    return trim($commit_hash);
+  }
+
   private function getDiffFullOptions($detect_moves_and_renames = true) {
     $options = array(
       self::getDiffBaseOptions(),
@@ -332,11 +426,22 @@ final class ArcanistGitAPI extends ArcanistRepositoryAPI {
     return implode(' ', $options);
   }
 
-  public function getFullGitDiff() {
+  /**
+   * @param the base revision
+   * @param head revision. If this is null, the generated diff will include the
+   * working copy
+   */
+  public function getFullGitDiff($base, $head=null) {
     $options = $this->getDiffFullOptions();
+
+    $diff_revision = $base;
+    if ($head) {
+      $diff_revision .= '..'.$head;
+    }
+
     list($stdout) = $this->execxLocal(
       "diff {$options} %s --",
-      $this->getBaseCommit());
+      $diff_revision);
     return $stdout;
   }
 
@@ -401,8 +506,9 @@ final class ArcanistGitAPI extends ArcanistRepositoryAPI {
     } else {
       // 2..N commits.
       list($stdout) = $this->execxLocal(
-        'log --first-parent --format=medium %s..HEAD',
-        $this->getBaseCommit());
+        'log --first-parent --format=medium %s..%s',
+        $this->getBaseCommit(),
+        $this->getHeadCommit());
     }
     return $stdout;
   }
@@ -821,7 +927,7 @@ final class ArcanistGitAPI extends ArcanistRepositoryAPI {
   }
 
   public function getAllLocalChanges() {
-    $diff = $this->getFullGitDiff();
+    $diff = $this->getFullGitDiff($this->getBaseCommit());
     if (!strlen(trim($diff))) {
       return array();
     }
