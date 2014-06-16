@@ -188,7 +188,7 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
 
   public function getVersion() {
     // The version number should be incremented whenever a new rule is added.
-    return '5';
+    return '6';
   }
 
   protected function resolveFuture($path, Future $future) {
@@ -454,7 +454,7 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
     $calls = $root->selectDescendantsOfType('n_FUNCTION_CALL');
     foreach ($calls as $call) {
       $node = $call->getChildByIndex(0);
-      $name = strtolower($node->getConcreteString());
+      $name = $node->getConcreteString();
       $version = idx($compat_info['functions'], $name);
       $windows = idx($compat_info['functions_windows'], $name);
       if ($version && version_compare($version['min'], $required, '>')) {
@@ -488,8 +488,8 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
     $classes = $root->selectDescendantsOfType('n_CLASS_NAME');
     foreach ($classes as $node) {
       $name = $node->getConcreteString();
-      $version = idx($compat_info['interfaces'], strtolower($name));
-      $version = idx($compat_info['classes'], strtolower($name), $version);
+      $version = idx($compat_info['interfaces'], $name);
+      $version = idx($compat_info['classes'], $name, $version);
       if ($version && version_compare($version['min'], $required, '>')) {
         $this->raiseLintAtNode(
           $node,
@@ -499,6 +499,21 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
       }
     }
 
+    // TODO: Technically, this will include function names. This is unlikely to
+    // cause any issues (unless, of course, there existed a function that had
+    // the same name as some constant).
+    $constants = $root->selectDescendantsOfType('n_SYMBOL_NAME');
+    foreach ($constants as $node) {
+      $name = $node->getConcreteString();
+      $version = idx($compat_info['constants'], $name);
+      if ($version && version_compare($version['min'], $required, '>')) {
+        $this->raiseLintAtNode(
+          $node,
+          self::LINT_PHP_53_FEATURES,
+          "This codebase targets PHP 5.2.3, but `{$name}` was not ".
+          "introduced until PHP {$version['min']}.");
+      }
+    }
   }
 
   public function lintPHP54Features(XHPASTNode $root) {
