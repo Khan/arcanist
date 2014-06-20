@@ -38,17 +38,11 @@ final class ArcanistMergeConflictLinter extends ArcanistLinter {
       if (preg_match('/^(>{7}|<{7}|={7})$/', $line)) {
         $this->raiseLintAtLine(
           $lineno + 1,
-          0,
+          1,
           self::LINT_MERGECONFLICT,
           pht('This syntax indicates there is an unresolved merge conflict.'));
       }
     }
-  }
-
-  public function getLintSeverityMap() {
-    return array(
-      self::LINT_MERGECONFLICT => ArcanistLintSeverity::SEVERITY_ERROR,
-    );
   }
 
   public function getLintNameMap() {
