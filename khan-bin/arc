@@ -221,16 +221,24 @@ def _pick_a_number(prompt, max_number):
 def normalize_usernames(arc_root, names, use_username_cache=True):
     """Given a list of names or name substrings, return a list of usernames.
 
-    The input names can be a phabricator username, or a real name, or
-    a substring of either.  If the input name is unique -- that is,
-    this string occurs in only one username/real-name in the phabricator
-    user-db -- we normalize to that one user's phabricator username.
-    If it's not unique, we ask the user to pick.  If there are no matches,
-    we raise an exception.
+    The input names can be a phabricator username, or a (part of a)
+    real name, or a substring of either.  We normalize as follows.
 
-    If the input name ends with @, it's taken to be a phabricator
-    username only, and no expansion is done.  It must match exactly in
-    that case.
+    1) If the input name starts with @, or ends with @, we take it to
+    be a username, and normalize to that ("alpert@" and "@alpert" both
+    normalize to the user with username "alpert").
+
+    2) If the input name is equal to one or more user's first-name,
+    last-name, or username, those are the candidate users.  If there's
+    only one candidate, we normalize to that user, otherwise we ask
+    the client to pick the user.  If there are no candidates, we go to
+    the next step.
+
+    3) If the input name is a substring of "username (firstname
+    lastname)" for one or more users, those are the candidate users.
+    If there's only one candidate, we normalize to that user,
+    otherwise we ask the client to pick the user.  If there are no
+    candidates, raise a NameError.
 
     Arguments:
       arc_root: the root of the arcanist repository on the local filesystem.
@@ -251,8 +259,9 @@ def normalize_usernames(arc_root, names, use_username_cache=True):
         return []
 
     retval = []
-    # Small optimization: if all args end with '@', no need for user-info.
-    if not all(n.strip().endswith('@') for n in names):
+    # Small optimization: if all args are @name/name@, no need for user-info.
+    if not all(n.strip().endswith('@') or n.strip().startswith('@')
+               for n in names):
         user_info = _get_user_info(arc_root, use_cache=use_username_cache)
         # For ease of searching, we'll create a map from lowercase
         # username to username/realname, and also from lowercase realname
@@ -269,11 +278,22 @@ def normalize_usernames(arc_root, names, use_username_cache=True):
         if name.endswith('@'):           # indicates an exact match desired
             retval.append(name[:-1])
             continue
+        if name.startswith('@'):         # also indicates an exact match
+            retval.append(name[1:])
+            continue
 
-        candidate_reviewers = set()  # all people whose name match 'name'
+        # First try the 'word' match.
+        candidate_reviewers = set()
         for (person, username_and_realname) in all_people.iteritems():
-            if name in person:    # name is a subset of 'person'
+            if name in person.split():    # name matches a word in 'person'
                 candidate_reviewers.add(username_and_realname)
+
+        # Then, if that doesn't work, move to 'substring' match.
+        if not candidate_reviewers:
+            for (person, username_and_realname) in all_people.iteritems():
+                if name in person:        # name is a substring of 'person'
+                    candidate_reviewers.add(username_and_realname)
+
         candidate_reviewers = sorted(candidate_reviewers)
 
         if not candidate_reviewers:   # no person matched the reviewer
