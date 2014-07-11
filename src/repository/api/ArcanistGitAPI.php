@@ -2,8 +2,6 @@
 
 /**
  * Interfaces with Git working copies.
- *
- * @group workingcopy
  */
 final class ArcanistGitAPI extends ArcanistRepositoryAPI {
 
@@ -24,7 +22,6 @@ final class ArcanistGitAPI extends ArcanistRepositoryAPI {
   }
 
   protected function buildLocalFuture(array $argv) {
-
     $argv[0] = 'git '.$argv[0];
 
     $future = newv('ExecFuture', $argv);
@@ -282,7 +279,8 @@ final class ArcanistGitAPI extends ArcanistRepositoryAPI {
 
     if (!$default_relative) {
       list($err, $upstream) = $this->execManualLocal(
-        "rev-parse --abbrev-ref --symbolic-full-name '@{upstream}'");
+        'rev-parse --abbrev-ref --symbolic-full-name %s',
+        '@{upstream}');
 
       if (!$err) {
         $default_relative = trim($upstream);
@@ -547,8 +545,8 @@ final class ArcanistGitAPI extends ArcanistRepositoryAPI {
       'svn find-rev %s',
       $input);
     if (!$stdout) {
-      throw new ArcanistUsageException("Cannot find the {$vcs} equivalent "
-                                       ."of {$input}.");
+      throw new ArcanistUsageException(
+        "Cannot find the {$vcs} equivalent of {$input}.");
     }
     // When git performs a partial-rebuild during svn
     // look-up, we need to parse the final line
@@ -834,7 +832,6 @@ final class ArcanistGitAPI extends ArcanistRepositoryAPI {
   }
 
   private function getFileDataAtRevision($path, $revision) {
-
     // NOTE: We don't want to just "git show {$revision}:{$path}" since if the
     // path was a directory at the given revision we'll get a list of its files
     // and treat it as though it as a file containing a list of other files,
@@ -1168,7 +1165,8 @@ final class ArcanistGitAPI extends ArcanistRepositoryAPI {
             break;
           case 'upstream':
             list($err, $upstream) = $this->execManualLocal(
-              "rev-parse --abbrev-ref --symbolic-full-name '@{upstream}'");
+              'rev-parse --abbrev-ref --symbolic-full-name %s',
+              '@{upstream}');
             if (!$err) {
               $upstream = rtrim($upstream);
               list($upstream_merge_base) = $this->execxLocal(
