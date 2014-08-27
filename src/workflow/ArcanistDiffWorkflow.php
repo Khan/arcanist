@@ -364,12 +364,6 @@ EOTEXT
       'no-diff' => array(
         'help' => 'Only run lint and unit tests. Intended for internal use.',
       ),
-      'background' => array(
-        'param' => 'bool',
-        'help' =>
-          'Run lint and unit tests on background. '.
-          '"0" to disable, "1" to enable (default).',
-      ),
       'cache' => array(
         'param' => 'bool',
         'help' => '0 to disable lint cache, 1 to enable (default).',
@@ -392,6 +386,10 @@ EOTEXT
           'unit' => true,
         ),
       ),
+      'browse' => array(
+        'help' => pht(
+          'After creating a diff or revision, open it in a web browser.'),
+      ),
       '*' => 'paths',
       'head' => array(
         'param' => 'commit',
@@ -410,10 +408,6 @@ EOTEXT
         ),
       )
     );
-
-    if (phutil_is_windows()) {
-      unset($arguments['background']);
-    }
 
     return $arguments;
   }
@@ -436,43 +430,6 @@ EOTEXT
 
     $this->runDiffSetupBasics();
 
-    $background = $this->getArgument('background', true);
-    if ($this->isRawDiffSource() || phutil_is_windows()) {
-      $background = false;
-    }
-
-    if ($background) {
-      $argv = $this->getPassedArguments();
-      if (!PhutilConsoleFormatter::getDisableANSI()) {
-        array_unshift($argv, '--ansi');
-      }
-
-      $repo = $this->getRepositoryAPI();
-      $head_commit = $this->getArgument('head');
-      if ($head_commit !== null) {
-        $repo->setHeadCommit($head_commit);
-      }
-
-      if ($repo->supportsCommitRanges()) {
-        $repo->getBaseCommit();
-      }
-
-      $script = phutil_get_library_root('arcanist').'/../scripts/arcanist.php';
-      if ($argv) {
-        $lint_unit = new ExecFuture(
-          'php %s --recon diff --no-diff %Ls',
-          $script,
-          $argv);
-      } else {
-        $lint_unit = new ExecFuture(
-          'php %s --recon diff --no-diff',
-          $script);
-      }
-
-      $lint_unit->write('', true);
-      $lint_unit->start();
-    }
-
     $commit_message = $this->buildCommitMessage();
 
     $this->dispatchEvent(
@@ -485,24 +442,10 @@ EOTEXT
       $revision = $this->buildRevisionFromCommitMessage($commit_message);
     }
 
-    if ($background) {
-      $server = new PhutilConsoleServer();
-      $server->addExecFutureClient($lint_unit);
-      $server->setHandler(array($this, 'handleServerMessage'));
-      $server->run();
+    $server = $this->console->getServer();
+    $server->setHandler(array($this, 'handleServerMessage'));
+    $data = $this->runLintUnit();
 
-      list($err) = $lint_unit->resolve();
-      $data = $this->readScratchJSONFile('diff-result.json');
-      if ($err || !$data) {
-        throw new Exception(
-          'Unable to read results from background linting and unit testing. '.
-          'You can try running arc diff again with --background 0');
-      }
-    } else {
-      $server = $this->console->getServer();
-      $server->setHandler(array($this, 'handleServerMessage'));
-      $data = $this->runLintUnit();
-    }
     $lint_result = $data['lintResult'];
     $this->unresolvedLint = $data['unresolvedLint'];
     $this->postponedLinters = $data['postponedLinters'];
@@ -570,6 +513,10 @@ EOTEXT
         ))."\n";
         ob_start();
       }
+
+      if ($this->shouldOpenCreatedObjectsInBrowser()) {
+        $this->openURIsInBrowser(array($diff_info['uri']));
+      }
     } else {
       $revision['diffid'] = $this->getDiffID();
 
@@ -625,6 +572,10 @@ EOTEXT
             'action' => 'rethink',
           ));
         echo "Planned changes to the revision.\n";
+      }
+
+      if ($this->shouldOpenCreatedObjectsInBrowser()) {
+        $this->openURIsInBrowser(array($uri));
       }
     }
 
@@ -2621,6 +2572,10 @@ EOTEXT
     $tmp = new TempFile();
     Filesystem::writeFile($tmp, $data);
     return Filesystem::getMimeType($tmp);
+  }
+
+  private function shouldOpenCreatedObjectsInBrowser() {
+    return $this->getArgument('browse');
   }
 
 }

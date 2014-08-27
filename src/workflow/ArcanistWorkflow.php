@@ -1795,4 +1795,78 @@ abstract class ArcanistWorkflow extends Phobject {
     return $engine;
   }
 
+  protected function openURIsInBrowser(array $uris) {
+    $browser = $this->getBrowserCommand();
+    foreach ($uris as $uri) {
+      $err = phutil_passthru('%s %s', $browser, $uri);
+      if ($err) {
+        throw new ArcanistUsageException(
+          pht(
+            "Failed to open '%s' in browser ('%s'). ".
+            "Check your 'browser' config option.",
+            $uri,
+            $browser));
+      }
+    }
+  }
+
+  private function getBrowserCommand() {
+    $config = $this->getConfigFromAnySource('browser');
+    if ($config) {
+      return $config;
+    }
+
+    if (phutil_is_windows()) {
+      return 'start';
+    }
+
+    $candidates = array('sensible-browser', 'xdg-open', 'open');
+
+    // NOTE: The "open" command works well on OS X, but on many Linuxes "open"
+    // exists and is not a browser. For now, we're just looking for other
+    // commands first, but we might want to be smarter about selecting "open"
+    // only on OS X.
+
+    foreach ($candidates as $cmd) {
+      if (Filesystem::binaryExists($cmd)) {
+        return $cmd;
+      }
+    }
+
+    throw new ArcanistUsageException(
+      pht(
+        "Unable to find a browser command to run. Set 'browser' in your ".
+        "Arcanist config to specify a command to use."));
+  }
+
+
+  /**
+   * Ask Phabricator to update the current repository as soon as possible.
+   *
+   * Calling this method after pushing commits allows Phabricator to discover
+   * the commits more quickly, so the system overall is more responsive.
+   *
+   * @return void
+   */
+  protected function askForRepositoryUpdate() {
+    // If we know which repository we're in, try to tell Phabricator that we
+    // pushed commits to it so it can update. This hint can help pull updates
+    // more quickly, especially in rarely-used repositories.
+    if ($this->getRepositoryCallsign()) {
+      try {
+        $this->getConduit()->callMethodSynchronous(
+          'diffusion.looksoon',
+          array(
+            'callsigns' => array($this->getRepositoryCallsign()),
+          ));
+      } catch (ConduitClientException $ex) {
+        // If we hit an exception, just ignore it. Likely, we are running
+        // against a Phabricator which is too old to support this method.
+        // Since this hint is purely advisory, it doesn't matter if it has
+        // no effect.
+      }
+    }
+  }
+
+
 }
