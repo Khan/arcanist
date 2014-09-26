@@ -47,6 +47,7 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
   const LINT_PHP_COMPATIBILITY         = 45;
   const LINT_LANGUAGE_CONSTRUCT_PAREN  = 46;
   const LINT_EMPTY_STATEMENT           = 47;
+  const LINT_ARRAY_SEPARATOR           = 48;
 
   private $naminghook;
   private $switchhook;
@@ -105,6 +106,7 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
       self::LINT_PHP_COMPATIBILITY         => 'PHP Compatibility',
       self::LINT_LANGUAGE_CONSTRUCT_PAREN  => 'Language Construct Parentheses',
       self::LINT_EMPTY_STATEMENT           => 'Empty Block Statement',
+      self::LINT_ARRAY_SEPARATOR           => 'Array Separator',
     );
   }
 
@@ -144,6 +146,7 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
       self::LINT_CONCATENATION_OPERATOR    => $warning,
       self::LINT_LANGUAGE_CONSTRUCT_PAREN  => $warning,
       self::LINT_EMPTY_STATEMENT           => $advice,
+      self::LINT_ARRAY_SEPARATOR           => $advice,
     );
   }
 
@@ -193,7 +196,7 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
 
   public function getVersion() {
     // The version number should be incremented whenever a new rule is added.
-    return '8';
+    return '9';
   }
 
   protected function resolveFuture($path, Future $future) {
@@ -263,6 +266,7 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
       'lintPHPCompatibility' => self::LINT_PHP_COMPATIBILITY,
       'lintLanguageConstructParentheses' => self::LINT_LANGUAGE_CONSTRUCT_PAREN,
       'lintEmptyBlockStatements' => self::LINT_EMPTY_STATEMENT,
+      'lintArraySeparator' => self::LINT_ARRAY_SEPARATOR,
     );
 
     foreach ($method_codes as $method => $codes) {
@@ -426,7 +430,7 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
           }
 
           $span = $conditional
-            ->getChildOfType(1, 'n_STATEMENT_LIST')
+            ->getChildByIndex(1)
             ->getTokens();
 
           $whitelist[$type][$symbol_name][] = range(
@@ -541,10 +545,14 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
 
     if (version_compare($this->version, '5.3.0') < 0) {
       $this->lintPHP53Features($root);
+    } else {
+      $this->lintPHP53Incompatibilities($root);
     }
 
     if (version_compare($this->version, '5.4.0') < 0) {
       $this->lintPHP54Features($root);
+    } else {
+      $this->lintPHP54Incompatibilities($root);
     }
   }
 
@@ -633,19 +641,51 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
     }
   }
 
+  private function lintPHP53Incompatibilities(XHPASTNode $root) {}
+
   private function lintPHP54Features(XHPASTNode $root) {
     $indexes = $root->selectDescendantsOfType('n_INDEX_ACCESS');
     foreach ($indexes as $index) {
-      $left = $index->getChildByIndex(0);
-      switch ($left->getTypeName()) {
+      switch ($index->getChildByIndex(0)->getTypeName()) {
         case 'n_FUNCTION_CALL':
         case 'n_METHOD_CALL':
           $this->raiseLintAtNode(
             $index->getChildByIndex(1),
             self::LINT_PHP_COMPATIBILITY,
-            'The f()[...] syntax was not introduced until PHP 5.4, but this '.
-            'codebase targets an earlier version of PHP. You can rewrite '.
-            'this expression using idx().');
+            pht(
+              'The `%s` syntax was not introduced until PHP 5.4, but this '.
+              'codebase targets an earlier version of PHP. You can rewrite '.
+              'this expression using `%s`.',
+              'f()[...]',
+              'idx()'));
+          break;
+      }
+    }
+  }
+
+  private function lintPHP54Incompatibilities(XHPASTNode $root) {
+    $breaks = $root->selectDescendantsOfTypes(array('n_BREAK', 'n_CONTINUE'));
+    foreach ($breaks as $break) {
+      $arg = $break->getChildByIndex(0);
+
+      switch ($arg->getTypeName()) {
+        case 'n_EMPTY':
+          break;
+
+        case 'n_NUMERIC_SCALAR':
+          if ($arg->getConcreteString() != '0') {
+            break;
+          }
+
+        default:
+          $this->raiseLintAtNode(
+            $break->getChildByIndex(0),
+            self::LINT_PHP_COMPATIBILITY,
+            pht(
+              'The `%s` and `%s` statements no longer accept '.
+              'variable arguments.',
+              'break',
+              'continue'));
           break;
       }
     }
@@ -2136,7 +2176,7 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
 
         $this->raiseLintAtToken(
           $wtoken,
-          self::LINT_BINARY_EXPRESSION_SPACING,
+          self::LINT_CONCATENATION_OPERATOR,
           'Convention: no spaces around "." (string concatenation) operator.',
           '');
       }
@@ -2710,6 +2750,43 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
             "Braces for an empty block statement shouldn't ".
             "contain only whitespace."),
           '{}');
+      }
+    }
+  }
+
+  protected function lintArraySeparator(XHPASTNode $root) {
+    $arrays = $root->selectDescendantsOfType('n_ARRAY_LITERAL');
+
+    foreach ($arrays as $array) {
+      $value_list = $array->getChildOfType(0, 'n_ARRAY_VALUE_LIST');
+      $values = $value_list->getChildrenOfType('n_ARRAY_VALUE');
+
+      if (!$values) {
+        // There is no need to check an empty array.
+        continue;
+      }
+
+      $multiline = $array->getLineNumber() != $array->getEndLineNumber();
+
+      $value = last($values);
+      $after = last($value->getTokens())->getNextToken();
+
+      if ($multiline && (!$after || $after->getValue() != ',')) {
+        if ($value->getChildByIndex(1)->getTypeName() == 'n_HEREDOC') {
+          continue;
+        }
+
+        $this->raiseLintAtNode(
+          $value,
+          self::LINT_ARRAY_SEPARATOR,
+          pht('Multi-lined arrays should have trailing commas.'),
+          $value->getConcreteString().',');
+      } else if (!$multiline && $after && $after->getValue() == ',') {
+        $this->raiseLintAtToken(
+          $after,
+          self::LINT_ARRAY_SEPARATOR,
+          pht('Single lined arrays should not have a trailing comma.'),
+          '');
       }
     }
   }

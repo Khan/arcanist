@@ -123,13 +123,17 @@ final class ArcanistTextLinter extends ArcanistLinter {
   }
 
   protected function lintNewlines($path) {
-    $pos = strpos($this->getData($path), "\r");
+    $data = $this->getData($path);
+    $pos  = strpos($this->getData($path), "\r");
+
     if ($pos !== false) {
       $this->raiseLintAtOffset(
-        $pos,
+        0,
         self::LINT_DOS_NEWLINE,
-        'You must use ONLY Unix linebreaks ("\n") in source code.',
-        "\r");
+        pht('You must use ONLY Unix linebreaks ("%s") in source code.', '\n'),
+        $data,
+        str_replace("\r\n", "\n", $data));
+
       if ($this->isMessageEnabled(self::LINT_DOS_NEWLINE)) {
         $this->stopAllLinters();
       }
@@ -142,7 +146,7 @@ final class ArcanistTextLinter extends ArcanistLinter {
       $this->raiseLintAtOffset(
         $pos,
         self::LINT_TAB_LITERAL,
-        'Configure your editor to use spaces for indentation.',
+        pht('Configure your editor to use spaces for indentation.'),
         "\t");
     }
   }
@@ -157,8 +161,11 @@ final class ArcanistTextLinter extends ArcanistLinter {
           $line_idx + 1,
           1,
           self::LINT_LINE_WRAP,
-          'This line is '.number_format(strlen($line)).' characters long, '.
-          'but the convention is '.$width.' characters.',
+          pht(
+            'This line is %s characters long, but the '.
+            'convention is %s characters.',
+            new PhutilNumber(strlen($line)),
+            $width),
           $line);
       }
     }
@@ -170,7 +177,7 @@ final class ArcanistTextLinter extends ArcanistLinter {
       $this->raiseLintAtOffset(
         strlen($data),
         self::LINT_EOF_NEWLINE,
-        'Files must end in a newline.',
+        pht('Files must end in a newline.'),
         '',
         "\n");
     }
@@ -196,9 +203,10 @@ final class ArcanistTextLinter extends ArcanistLinter {
       $this->raiseLintAtOffset(
         $offset,
         self::LINT_BAD_CHARSET,
-        'Source code should contain only ASCII bytes with ordinal decimal '.
-        'values between 32 and 126 inclusive, plus linefeed. Do not use UTF-8 '.
-        'or other multibyte charsets.',
+        pht(
+          'Source code should contain only ASCII bytes with ordinal '.
+          'decimal values between 32 and 126 inclusive, plus linefeed. '.
+          'Do not use UTF-8 or other multibyte charsets.'),
         $string);
     }
 
@@ -226,9 +234,10 @@ final class ArcanistTextLinter extends ArcanistLinter {
       $this->raiseLintAtOffset(
         $offset,
         self::LINT_TRAILING_WHITESPACE,
-        'This line contains trailing whitespace. Consider setting up your '.
-          'editor to automatically remove trailing whitespace, you will save '.
-          'time.',
+        pht(
+          'This line contains trailing whitespace. Consider setting '.
+          'up your editor to automatically remove trailing whitespace, '.
+          'you will save time.'),
         $string,
         '');
     }
@@ -252,8 +261,9 @@ final class ArcanistTextLinter extends ArcanistLinter {
     $this->raiseLintAtOffset(
       $offset,
       self::LINT_BOF_WHITESPACE,
-      'This file contains leading whitespace at the beginning of the file. '.
-      'This is unnecessary and should be avoided when possible.',
+      pht(
+        'This file contains leading whitespace at the beginning of the file. '.
+        'This is unnecessary and should be avoided when possible.'),
       $string,
       '');
   }
@@ -276,8 +286,9 @@ final class ArcanistTextLinter extends ArcanistLinter {
     $this->raiseLintAtOffset(
       $offset,
       self::LINT_EOF_WHITESPACE,
-      'This file contains trailing whitespace at the end of the file. This '.
-      'is unnecessary and should be avoided when possible.',
+      pht(
+        'This file contains trailing whitespace at the end of the file. '.
+        'This is unnecessary and should be avoided when possible.'),
       $string,
       '');
   }
@@ -292,8 +303,9 @@ final class ArcanistTextLinter extends ArcanistLinter {
       $this->raiseLintAtOffset(
         $offset,
         self::LINT_NO_COMMIT,
-        'This file is explicitly marked as "'.$deadly.'", which blocks '.
-        'commits.',
+        pht(
+          'This file is explicitly marked as "%s", which blocks commits.',
+          $deadly),
         $deadly);
     }
   }
