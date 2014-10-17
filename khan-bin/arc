@@ -12,6 +12,7 @@ probably, but well worth it.)
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -172,7 +173,8 @@ def _git_call(git_args):
     Raises NotGitError if run outside a git repo, or CalledProcessError
     if the git command fails for some other reason."""
     try:
-        return subprocess.check_output(['git'] + git_args)
+        return subprocess.check_output(['git'] + git_args,
+                                       stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError, why:
         if 'Not a git repository' in str(why):
             raise NotGitError()
@@ -457,17 +459,65 @@ def add_onto_for_arc_land(arc_args):
     return arc_args + ['--onto', parent.strip()]
 
 
+def maybe_munge_browse_arg(arc_args):
+    """If the browse arg is a commit-ish, try to replace it with a review."""
+    # 'arc browse' takes one argument, so it should be the last word.
+    # If 'browse' isn't followed by an arg, assume it's HEAD.
+    if arc_args[-1] == 'browse':
+        arc_args.append('HEAD')
+
+    browse_arg = arc_args[-1]
+
+    # Check if the arg is a commit-ish, and if so get the log message.
+    try:
+        log_message = _git_call(['log', browse_arg])
+    except (subprocess.CalledProcessError, NotGitError):
+        return arc_args     # Not a commit-ish, not in a git repo, ...
+
+    # If the commit-ish indicates a phabricator review, use it!
+    m = re.search(
+        r'^\s*Differential Revision: http://phabricator.khanacademy.org/(.+)',
+        log_message, re.MULTILINE)
+
+    if not m and browse_arg == 'HEAD':
+        # Use 'arc which' to see if the review is a parent of head.
+        which_output = subprocess.check_output(['arc', 'which'])
+        m = re.search(r'^MATCHING REVISIONS.*?(D\d+)', which_output,
+                      re.MULTILINE | re.DOTALL)
+
+    if m:
+        arc_args[-1] = m.group(1)
+        print 'Loading %s (from %s)' % (arc_args[-1], browse_arg)
+
+    return arc_args
+
+
+def _get_subcommand(arc_args):
+    """Return the arc command being run given args to 'arc'.
+
+    For instance, for 'arc --trace --config key=value diff --update D435'
+    it would return 'diff'.
+    """
+    if not arc_args:
+        return None
+
+    # TODO(csilvers): support --trace, --config, etc.
+    return arc_args[0]
+
+
 def main(arc_args, arc_root=None):
     if arc_root is None:
         arc_root = _DEFAULT_ARC_ROOT
 
     arcanist_arc = os.path.join(arc_root, 'bin', 'arc')
 
+    arc_subcommand = _get_subcommand(arc_args)
+
     # If they are trying to install a certificate, skip our fancy
     # work; it won't succeed anyway without the certificate!  (Better
     # would be to grep for '"cert"' in ~/.arcrc, but I don't want to
     # have to deal with parsing --arcrc-file.
-    if arc_args and arc_args[0] == 'install-certificate':
+    if arc_subcommand == 'install-certificate':
         # This never returns.
         os.execv(arcanist_arc, [arcanist_arc] + arc_args)
 
@@ -479,8 +529,11 @@ def main(arc_args, arc_root=None):
     arc_args = normalize_rr_flags(arc_root, arc_args)
     arc_args = normalize_cc_flags(arc_root, arc_args)
 
-    if arc_args and arc_args[0] == 'land':
+    if arc_subcommand == 'land':
         arc_args = add_onto_for_arc_land(arc_args)
+
+    if arc_subcommand == 'browse':
+        arc_args = maybe_munge_browse_arg(arc_args)
 
     # Now run the 'real' (arcanist) arc.
     os.execv(arcanist_arc, [arcanist_arc] + arc_args)
