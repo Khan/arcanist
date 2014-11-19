@@ -87,6 +87,23 @@ def _update_arcrc(arc_root, default_arcrc_file='khan-bin/khan-arcrc',
 
     num_updates = _add_or_replace(default_arcrc, user_arcrc, '', do_not_update)
 
+    # As a migration step: if config.default is for an https url,
+    # but we only have an http certificate, rename it to be an
+    # https certificate instead.
+    if user_arcrc.get('config', {}).get('default', '').startswith("https://"):
+        hosts = user_arcrc.get('hosts', {})
+        if hosts:
+            http_cert = hosts.get('http://phabricator.khanacademy.org/api/')
+            https_cert = hosts.get('https://phabricator.khanacademy.org/api/')
+            if http_cert and not https_cert:   # http is canonical
+                print >>sys.stderr, 'Copying your cert key from http to https'
+                hosts['https://phabricator.khanacademy.org/api/'] = http_cert
+                num_updates += 1
+
+    # TODO(csilvers): delete the http cert, if the https cert exists, once
+    #                 all .arcconfig's have moved to specifying the https
+    #                 host for the conduit-uri.
+
     if num_updates:
         bak_filename = user_arcrc_file + '.bak'
         if create_bak and os.path.exists(user_arcrc_file):

@@ -1,6 +1,6 @@
 {
   "config"  : {
-    "default"                      : "http:\/\/phabricator.khanacademy.org",
+    "default"                      : "https:\/\/phabricator.khanacademy.org",
     "lint.engine"                  : "ArcanistSingleLintEngine",
     "lint.engine.single.linter"    : "ArcanistScriptAndRegexLinter",
     "linter.scriptandregex.script" : "~\/khan\/devtools\/khan-linter\/runlint.py --always-exit-0 --blacklist=yes --propose-arc-fixes",
