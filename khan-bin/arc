@@ -492,9 +492,9 @@ def maybe_munge_browse_arg(arc_args):
         return arc_args     # Not a commit-ish, not in a git repo, ...
 
     # If the commit-ish indicates a phabricator review, use it!
-    m = re.search(
-        r'^\s*Differential Revision: http://phabricator.khanacademy.org/(.+)',
-        log_message, re.MULTILINE)
+    m = re.search((r'^\s*Differential Revision: '
+                   r'https?://phabricator.khanacademy.org/(.+)'),
+                  log_message, re.MULTILINE)
 
     if not m and browse_arg == 'HEAD':
         # Use 'arc which' to see if the review is a parent of head.
