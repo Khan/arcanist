@@ -158,7 +158,10 @@ def _sync_arc(arc_root):
     _update_arcrc(arc_root)
 
     # Also update our cache of usernames, for username completion with --rr.
-    _get_user_info(arc_root, use_cache=False)   # updates the cache
+    try:
+        _get_user_info(arc_root, use_cache=False)   # updates the cache
+    except RuntimeError:        # probably means we don't have an ssh key
+        pass
 
     open('/tmp/arc.pull', 'w').close()    # update the last-pull time.
 
