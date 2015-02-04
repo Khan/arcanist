@@ -1008,10 +1008,12 @@ abstract class ArcanistWorkflow extends Phobject {
     $repository = $this->loadProjectRepository();
     if ($repository) {
       $callsign = $repository['callsign'];
-      $known_commits = $this->getConduit()->callMethodSynchronous(
-        'diffusion.getcommits',
-        array('commits' => array('r'.$callsign.$commit['commit'])));
-      if (ifilter($known_commits, 'error', $negate = true)) {
+      $commit_name = 'r'.$callsign.$commit['commit'];
+      $result = $this->getConduit()->callMethodSynchronous(
+        'diffusion.querycommits',
+        array('names' => array($commit_name)));
+      $known_commit = idx($result['identifierMap'], $commit_name);
+      if (!$known_commit) {
         return false;
       }
     }
@@ -1064,7 +1066,7 @@ abstract class ArcanistWorkflow extends Phobject {
     return $this->loadBundleFromConduit(
       $conduit,
       array(
-      'diff_id' => $diff_id,
+      'ids' => array($diff_id),
     ));
   }
 
@@ -1075,7 +1077,7 @@ abstract class ArcanistWorkflow extends Phobject {
     return $this->loadBundleFromConduit(
       $conduit,
       array(
-      'revision_id' => $revision_id,
+      'revisionIDs' => array($revision_id),
     ));
   }
 
@@ -1083,8 +1085,8 @@ abstract class ArcanistWorkflow extends Phobject {
     ConduitClient $conduit,
     $params) {
 
-    $future = $conduit->callMethod('differential.getdiff', $params);
-    $diff = $future->resolve();
+    $future = $conduit->callMethod('differential.querydiffs', $params);
+    $diff = head($future->resolve());
 
     $changes = array();
     foreach ($diff['changes'] as $changedict) {
