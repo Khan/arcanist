@@ -201,6 +201,16 @@ def _git_call(git_args):
         raise
 
 
+def _try_save(filename, json_contents):
+    try:
+        with open(filename + '.tmp', 'w') as f:
+            json.dump(json_contents, f)
+        os.unlink(filename)      # atomic rename
+        os.rename(filename + '.tmp', filename)
+    except (IOError, OSError):
+        pass
+
+
 def _get_user_info(arc_root, use_cache):
     """Retrieve a list of (username, realname) pairs of all phab. users."""
     if use_cache:
@@ -217,14 +227,24 @@ def _get_user_info(arc_root, use_cache):
                   'unverified' not in ui['roles'])]
 
     # Might as well update the cache while we've got all this data...
-    try:
-        with open('/tmp/arc.usernames.tmp', 'w') as f:
-            json.dump(retval, f)
-        os.unlink('/tmp/arc.usernames')      # atomic rename
-        os.rename('/tmp/arc.usernames.tmp', '/tmp/arc.usernames')
-    except (IOError, OSError):
-        pass
+    _try_save('/tmp/arc.usernames', retval)
+    return retval
 
+
+def _get_project_info(arc_root, use_cache):
+    """Retrieve a list of project_names of all active phabricator projects."""
+    if use_cache:
+        try:
+            with open('/tmp/arc.projectnames') as f:
+                return json.load(f)
+        except (IOError, OSError, ValueError):
+            pass
+
+    project_info = _conduit_call(arc_root, 'project.query', {'limit': 1000000})
+    retval = [pi['name'] for pi in project_info['data'].itervalues()
+              if pi['color'] != 'disabled']
+
+    _try_save('/tmp/arc.projectnames', retval)
     return retval
 
 
@@ -240,11 +260,15 @@ def _pick_a_number(prompt, max_number):
     return pick
 
 
-def normalize_usernames(arc_root, names, use_username_cache=True):
+def normalize_usernames(arc_root, names, use_arc_caches=True):
     """Given a list of names or name substrings, return a list of usernames.
 
     The input names can be a phabricator username, or a (part of a)
-    real name, or a substring of either.  We normalize as follows.
+    real name, or a substring of either.  It can also be a prefix of a
+    phabricator project-name, including the leading '#'
+    (e.g. '#infra').
+
+    We normalize as follows.
 
     1) If the input name starts with @, or ends with @, we take it to
     be a username, and normalize to that ("alpert@" and "@alpert" both
@@ -265,7 +289,7 @@ def normalize_usernames(arc_root, names, use_username_cache=True):
     Arguments:
       arc_root: the root of the arcanist repository on the local filesystem.
       names: a list (or anything iterable) of strings.
-      use_username_cache: speed this up by using a cache.  Mostly for
+      use_arc_caches: speed this up by using a cache.  Mostly for
           internal use.
 
     Returns:
@@ -275,6 +299,7 @@ def normalize_usernames(arc_root, names, use_username_cache=True):
 
     Raises:
       NameError: if an input name matches no name in the phabricator db.
+
     """
     # This code is adapted from github.com:Khan/kiln-review's review.py
     if not names:
@@ -284,7 +309,7 @@ def normalize_usernames(arc_root, names, use_username_cache=True):
     # Small optimization: if all args are @name/name@, no need for user-info.
     if not all(n.strip().endswith('@') or n.strip().startswith('@')
                for n in names):
-        user_info = _get_user_info(arc_root, use_cache=use_username_cache)
+        user_info = _get_user_info(arc_root, use_cache=use_arc_caches)
         # For ease of searching, we'll create a map from lowercase
         # username to username/realname, and also from lowercase realname
         # to username/realname.
@@ -292,6 +317,14 @@ def normalize_usernames(arc_root, names, use_username_cache=True):
         for (username, realname) in user_info:
             all_people[username.lower()] = (username, realname)
             all_people[realname.lower()] = (username, realname)
+
+    # Likewise, without a # we don't need project-info.
+    if any(n.strip().startswith('#') for n in names):
+        project_info = _get_project_info(arc_root, use_cache=use_arc_caches)
+        all_projects = {}
+        for project in project_info:
+            # Keep the same format as all_people to make the below easier.
+            all_projects['#' + project.lower()] = ('#' + project, project)
 
     # For each asked-for reviewer, find the set of people records that
     # reviewer could be referring to.  Hopefully it's exactly one!
@@ -304,28 +337,35 @@ def normalize_usernames(arc_root, names, use_username_cache=True):
             retval.append(name[1:])
             continue
 
+        if name.startswith('#'):   # it's a project
+            all_candidates = all_projects
+            dup_msg = 'There are a few projects matching "%s"' % name
+        else:
+            all_candidates = all_people
+            dup_msg = 'There are a few folks matching "%s"' % name
+
         # First try the 'word' match.
         candidate_reviewers = set()
-        for (person, username_and_realname) in all_people.iteritems():
+        for (person, username_and_realname) in all_candidates.iteritems():
             if name in person.split():    # name matches a word in 'person'
                 candidate_reviewers.add(username_and_realname)
 
         # Then, if that doesn't work, move to 'substring' match.
         if not candidate_reviewers:
-            for (person, username_and_realname) in all_people.iteritems():
+            for (person, username_and_realname) in all_candidates.iteritems():
                 if name in person:        # name is a substring of 'person'
                     candidate_reviewers.add(username_and_realname)
 
         candidate_reviewers = sorted(candidate_reviewers)
 
         if not candidate_reviewers:   # no person matched the reviewer
-            if use_username_cache:
+            if use_arc_caches:
                 # Try again without the cache; maybe we're seeking a new user
                 return normalize_usernames(arc_root, names,
-                                           use_username_cache=False)
+                                           use_arc_caches=False)
             raise NameError('No reviewer found matching "%s"' % name)
         elif len(candidate_reviewers) > 1:
-            print '\nHmm...There are a few folks matching "%s":' % name
+            print '\nHmm...%s:' % dup_msg
             for (i, username_and_realname) in enumerate(candidate_reviewers):
                 print '  %s. %s (%s)' % (i + 1, username_and_realname[0],
                                          username_and_realname[1])
