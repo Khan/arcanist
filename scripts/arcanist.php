@@ -31,6 +31,11 @@ $base_args->parsePartial(
       'help'    => pht('Connect to Phabricator install specified by __uri__.'),
     ),
     array(
+      'name' => 'conduit-token',
+      'param' => 'token',
+      'help' => pht('Use a specific authentication token.'),
+    ),
+    array(
       'name'    => 'conduit-version',
       'param'   => 'version',
       'help'    => pht(
@@ -54,6 +59,7 @@ $base_args->parsePartial(
 $config_trace_mode = $base_args->getArg('trace');
 
 $force_conduit = $base_args->getArg('conduit-uri');
+$force_token = $base_args->getArg('conduit-token');
 $force_conduit_version = $base_args->getArg('conduit-version');
 $conduit_timeout = $base_args->getArg('conduit-timeout');
 $skip_arcconfig = $base_args->getArg('skip-arcconfig');
@@ -307,6 +313,9 @@ try {
   $user_name = idx($host_config, 'user');
   $certificate = idx($host_config, 'cert');
   $conduit_token = idx($host_config, 'token');
+  if ($force_token) {
+    $conduit_token = $force_token;
+  }
 
   $description = implode(' ', $original_argv);
   $credentials = array(

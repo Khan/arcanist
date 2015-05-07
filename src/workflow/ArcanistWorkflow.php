@@ -325,10 +325,11 @@ abstract class ArcanistWorkflow extends Phobject {
       // If we have `token`, this server supports the simpler, new-style
       // token-based authentication. Use that instead of all the certificate
       // stuff.
-      if (isset($credentials['token'])) {
+      $token = idx($credentials, 'token');
+      if (strlen($token)) {
         $conduit = $this->getConduit();
 
-        $conduit->setConduitToken($credentials['token']);
+        $conduit->setConduitToken($token);
 
         try {
           $result = $this->getConduit()->callMethodSynchronous(
