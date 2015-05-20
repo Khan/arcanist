@@ -8,7 +8,7 @@
  * @task hook         Hooks for Setup and Teardown
  * @task internal     Internals
  */
-abstract class ArcanistPhutilTestCase {
+abstract class PhutilTestCase {
 
   private $assertions = 0;
   private $runningTest;
@@ -16,7 +16,7 @@ abstract class ArcanistPhutilTestCase {
   private $results = array();
   private $enableCoverage;
   private $coverage = array();
-  private $projectRoot;
+  private $workingCopy;
   private $paths;
   private $renderer;
 
@@ -122,7 +122,7 @@ abstract class ArcanistPhutilTestCase {
     }
 
     $this->failTest($output);
-    throw new ArcanistPhutilTestTerminatedException($output);
+    throw new PhutilTestTerminatedException($output);
   }
 
 
@@ -137,7 +137,7 @@ abstract class ArcanistPhutilTestCase {
    */
   final protected function assertFailure($message) {
     $this->failTest($message);
-    throw new ArcanistPhutilTestTerminatedException($message);
+    throw new PhutilTestTerminatedException($message);
   }
 
   /**
@@ -150,7 +150,7 @@ abstract class ArcanistPhutilTestCase {
    */
   final protected function assertSkipped($message) {
     $this->skipTest($message);
-    throw new ArcanistPhutilTestSkippedException($message);
+    throw new PhutilTestSkippedException($message);
   }
 
 
@@ -230,7 +230,7 @@ abstract class ArcanistPhutilTestCase {
       try {
         call_user_func($callable, $input);
       } catch (Exception $ex) {
-        if ($ex instanceof ArcanistPhutilTestTerminatedException) {
+        if ($ex instanceof PhutilTestTerminatedException) {
           throw $ex;
         }
         if (!($ex instanceof $exception_class)) {
@@ -363,7 +363,7 @@ abstract class ArcanistPhutilTestCase {
    * This hook is invoked once, before any test cases execute. It gives you
    * an opportunity to perform setup steps for the entire suite of test cases.
    *
-   * @param list<ArcanistPhutilTestCase> List of test cases to be run.
+   * @param list<PhutilTestCase> List of test cases to be run.
    * @return void
    * @task hook
    */
@@ -375,7 +375,7 @@ abstract class ArcanistPhutilTestCase {
   /**
    * This hook is invoked once, after all test cases execute.
    *
-   * @param list<ArcanistPhutilTestCase> List of test cases that ran.
+   * @param list<PhutilTestCase> List of test cases that ran.
    * @return void
    * @task hook
    */
@@ -515,9 +515,9 @@ abstract class ArcanistPhutilTestCase {
                 'least one assertion.'));
           }
 
-        } catch (ArcanistPhutilTestTerminatedException $ex) {
+        } catch (PhutilTestTerminatedException $ex) {
           // Continue with the next test.
-        } catch (ArcanistPhutilTestSkippedException $ex) {
+        } catch (PhutilTestSkippedException $ex) {
           // Continue with the next test.
         } catch (Exception $ex) {
           $ex_class = get_class($ex);
@@ -570,7 +570,9 @@ abstract class ArcanistPhutilTestCase {
     $coverage = array();
 
     foreach ($result as $file => $report) {
-      if (strncmp($file, $this->projectRoot, strlen($this->projectRoot))) {
+      $project_root = $this->getProjectRoot();
+
+      if (strncmp($file, $project_root, strlen($project_root))) {
         continue;
       }
 
@@ -593,7 +595,7 @@ abstract class ArcanistPhutilTestCase {
           $str .= 'N'; // Not executable.
         }
       }
-      $coverage[substr($file, strlen($this->projectRoot) + 1)] = $str;
+      $coverage[substr($file, strlen($project_root) + 1)] = $str;
     }
 
     // Only keep coverage information for files modified by the change. In
@@ -613,9 +615,25 @@ abstract class ArcanistPhutilTestCase {
     }
   }
 
-  final public function setProjectRoot($project_root) {
-    $this->projectRoot = $project_root;
+  final public function getWorkingCopy() {
+    return $this->workingCopy;
+  }
+
+  final public function setWorkingCopy(
+    ArcanistWorkingCopyIdentity $working_copy) {
+
+    $this->workingCopy = $working_copy;
     return $this;
+  }
+
+  final public function getProjectRoot() {
+    $working_copy = $this->getWorkingCopy();
+
+    if (!$working_copy) {
+      throw new PhutilInvalidStateException('setWorkingCopy');
+    }
+
+    return $working_copy->getProjectRoot();
   }
 
   final public function setPaths(array $paths) {
@@ -623,8 +641,18 @@ abstract class ArcanistPhutilTestCase {
     return $this;
   }
 
-  protected function getLink($method) {
-    return null;
+  final protected function getLink($method) {
+    $base_uri = $this
+      ->getWorkingCopy()
+      ->getProjectConfig('phabricator.uri');
+
+    $uri = id(new PhutilURI($base_uri))
+      ->setPath("/diffusion/symbol/{$method}/")
+      ->setQueryParam('context', get_class($this))
+      ->setQueryParam('jump', 'true')
+      ->setQueryParam('lang', 'php');
+
+    return (string)$uri;
   }
 
   public function setRenderer(ArcanistUnitRenderer $renderer) {
@@ -708,7 +736,7 @@ abstract class ArcanistPhutilTestCase {
     $output = $description."\n\n".$header."\n".$actual_result;
 
     $this->failTest($output);
-    throw new ArcanistPhutilTestTerminatedException($output);
+    throw new PhutilTestTerminatedException($output);
   }
 
 }

@@ -69,6 +69,9 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
   const LINT_TOSTRING_EXCEPTION         = 67;
   const LINT_LAMBDA_FUNC_FUNCTION       = 68;
   const LINT_INSTANCEOF_OPERATOR        = 69;
+  const LINT_INVALID_DEFAULT_PARAMETER  = 70;
+  const LINT_MODIFIER_ORDERING          = 71;
+  const LINT_INVALID_MODIFIERS          = 72;
 
   private $blacklistedFunctions = array();
   private $naminghook;
@@ -215,6 +218,12 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
         => pht('%s Function', '__lambda_func'),
       self::LINT_INSTANCEOF_OPERATOR
         => pht('%s Operator', 'instanceof'),
+      self::LINT_INVALID_DEFAULT_PARAMETER
+        => pht('Invalid Default Parameter'),
+      self::LINT_MODIFIER_ORDERING
+        => pht('Modifier Ordering'),
+      self::LINT_INVALID_MODIFIERS
+        => pht('Invalid Modifiers'),
     );
   }
 
@@ -268,6 +277,7 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
       self::LINT_USELESS_OVERRIDING_METHOD  => $advice,
       self::LINT_ALIAS_FUNCTION             => $advice,
       self::LINT_CAST_SPACING               => $advice,
+      self::LINT_MODIFIER_ORDERING          => $advice,
     );
   }
 
@@ -335,7 +345,7 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
 
   public function getVersion() {
     // The version number should be incremented whenever a new rule is added.
-    return '31';
+    return '34';
   }
 
   protected function resolveFuture($path, Future $future) {
@@ -411,8 +421,8 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
       'lintConstructorParentheses' => self::LINT_CONSTRUCTOR_PARENTHESES,
       'lintSwitchStatements' => self::LINT_DUPLICATE_SWITCH_CASE,
       'lintBlacklistedFunction' => self::LINT_BLACKLISTED_FUNCTION,
-      'lintMethodModifier' => self::LINT_IMPLICIT_VISIBILITY,
-      'lintPropertyModifier' => self::LINT_IMPLICIT_VISIBILITY,
+      'lintMethodVisibility' => self::LINT_IMPLICIT_VISIBILITY,
+      'lintPropertyVisibility' => self::LINT_IMPLICIT_VISIBILITY,
       'lintCallTimePassByReference' => self::LINT_CALL_TIME_PASS_BY_REF,
       'lintFormattedString' => self::LINT_FORMATTED_STRING,
       'lintUnnecessaryFinalModifier' => self::LINT_UNNECESSARY_FINAL_MODIFIER,
@@ -431,6 +441,10 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
       'lintThrowExceptionInToStringMethod' => self::LINT_TOSTRING_EXCEPTION,
       'lintLambdaFuncFunction' => self::LINT_LAMBDA_FUNC_FUNCTION,
       'lintInstanceOfOperator' => self::LINT_INSTANCEOF_OPERATOR,
+      'lintInvalidDefaultParameters' => self::LINT_INVALID_DEFAULT_PARAMETER,
+      'lintMethodModifierOrdering' => self::LINT_MODIFIER_ORDERING,
+      'lintPropertyModifierOrdering' => self::LINT_MODIFIER_ORDERING,
+      'lintInvalidModifiers' => self::LINT_INVALID_MODIFIERS,
     );
 
     foreach ($method_codes as $method => $codes) {
@@ -3219,7 +3233,8 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
       $value = last($values);
       $after = last($value->getTokens())->getNextToken();
 
-      if ($multiline && (!$after || $after->getValue() != ',')) {
+      if ($multiline) {
+        if (!$after || $after->getValue() != ',') {
         if ($value->getChildByIndex(1)->getTypeName() == 'n_HEREDOC') {
           continue;
         }
@@ -3232,7 +3247,7 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
 
         if (strpos($after, "\n") === false) {
           $original    .= $after;
-          $replacement .= rtrim($after)."\n".$array->getIndentation();
+            $replacement .= $after."\n".$array->getIndentation();
         }
 
         $this->raiseLintAtOffset(
@@ -3241,7 +3256,16 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
           pht('Multi-lined arrays should have trailing commas.'),
           $original,
           $replacement);
-      } else if (!$multiline && $after && $after->getValue() == ',') {
+        } else if ($value->getLineNumber() == $array->getEndLineNumber()) {
+          $close = last($array->getTokens());
+
+          $this->raiseLintAtToken(
+            $close,
+            self::LINT_ARRAY_SEPARATOR,
+            pht('Closing parenthesis should be on a new line.'),
+            "\n".$array->getIndentation().$close->getValue());
+        }
+      } else if ($after && $after->getValue() == ',') {
         $this->raiseLintAtToken(
           $after,
           self::LINT_ARRAY_SEPARATOR,
@@ -3324,7 +3348,7 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
     }
   }
 
-  private function lintMethodModifier(XHPASTNode $root) {
+  private function lintMethodVisibility(XHPASTNode $root) {
     static $visibilities = array(
       'public',
       'protected',
@@ -3358,7 +3382,7 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
     }
   }
 
-  private function lintPropertyModifier(XHPASTNode $root) {
+  private function lintPropertyVisibility(XHPASTNode $root) {
     static $visibilities = array(
       'public',
       'protected',
@@ -4113,7 +4137,7 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
         $function_name,
         self::LINT_ALIAS_FUNCTION,
         pht('Alias functions should be avoided.'),
-        $aliases[$function_name->getConcreteString()]);
+        $aliases[phutil_utf8_strtolower($function_name->getConcreteString())]);
     }
   }
 
@@ -4224,31 +4248,239 @@ final class ArcanistXHPASTLinter extends ArcanistBaseXHPASTLinter {
     }
   }
 
+  private function lintInvalidDefaultParameters(XHPASTNode $root) {
+    $parameters = $root->selectDescendantsOfType('n_DECLARATION_PARAMETER');
 
-  /**
-   * Retrieve all calls to some specified function(s).
-   *
-   * Returns all descendant nodes which represent a function call to one of the
-   * specified functions.
-   *
-   * @param  XHPASTNode    Root node.
-   * @param  list<string>  Function names.
-   * @return AASTNodeList
-   */
-  protected function getFunctionCalls(XHPASTNode $root, array $function_names) {
-    $calls = $root->selectDescendantsOfType('n_FUNCTION_CALL');
-    $nodes = array();
+    foreach ($parameters as $parameter) {
+      $type = $parameter->getChildByIndex(0);
+      $default = $parameter->getChildByIndex(2);
 
-    foreach ($calls as $call) {
-      $node = $call->getChildByIndex(0);
-      $name = strtolower($node->getConcreteString());
+      if ($type->getTypeName() == 'n_EMPTY') {
+        continue;
+      }
 
-      if (in_array($name, $function_names)) {
-        $nodes[] = $call;
+      if ($default->getTypeName() == 'n_EMPTY') {
+        continue;
+      }
+
+      $default_is_null = $default->getTypeName() == 'n_SYMBOL_NAME' &&
+        strtolower($default->getConcreteString()) == 'null';
+
+      switch (strtolower($type->getConcreteString())) {
+        case 'array':
+          if ($default->getTypeName() == 'n_ARRAY_LITERAL') {
+            break;
+          }
+          if ($default_is_null) {
+            break;
+          }
+
+          $this->raiseLintAtNode(
+            $default,
+            self::LINT_INVALID_DEFAULT_PARAMETER,
+            pht(
+              'Default value for parameters with %s type hint '.
+              'can only be an %s or %s.',
+              'array',
+              'array',
+              'null'));
+          break;
+
+        case 'callable':
+          if ($default_is_null) {
+            break;
+          }
+
+          $this->raiseLintAtNode(
+            $default,
+            self::LINT_INVALID_DEFAULT_PARAMETER,
+            pht(
+              'Default value for parameters with %s type hint can only be %s.',
+              'callable',
+              'null'));
+          break;
+
+        default:
+          // Class/interface parameter.
+          if ($default_is_null) {
+            break;
+          }
+
+          $this->raiseLintAtNode(
+            $default,
+            self::LINT_INVALID_DEFAULT_PARAMETER,
+            pht(
+              'Default value for parameters with a class type hint '.
+              'can only be %s.',
+              'null'));
+          break;
       }
     }
+  }
 
-    return AASTNodeList::newFromTreeAndNodes($root->getTree(), $nodes);
+  private function lintMethodModifierOrdering(XHPASTNode $root) {
+    static $modifiers = array(
+      'abstract',
+      'final',
+      'public',
+      'protected',
+      'private',
+      'static',
+    );
+
+    $methods = $root->selectDescendantsOfType('n_METHOD_MODIFIER_LIST');
+
+    foreach ($methods as $method) {
+      $modifier_ordering = array_values(
+        mpull($method->getChildren(), 'getConcreteString'));
+      $expected_modifier_ordering = array_values(
+        array_intersect(
+          $modifiers,
+          $modifier_ordering));
+
+      if (count($modifier_ordering) != count($expected_modifier_ordering)) {
+        continue;
+      }
+
+      if ($modifier_ordering != $expected_modifier_ordering) {
+        $this->raiseLintAtNode(
+          $method,
+          self::LINT_MODIFIER_ORDERING,
+          pht('Non-conventional modifier ordering.'),
+          implode(' ', $expected_modifier_ordering));
+      }
+    }
+  }
+
+  private function lintPropertyModifierOrdering(XHPASTNode $root) {
+    static $modifiers = array(
+      'public',
+      'protected',
+      'private',
+      'static',
+    );
+
+    $properties = $root->selectDescendantsOfType(
+      'n_CLASS_MEMBER_MODIFIER_LIST');
+
+    foreach ($properties as $property) {
+      $modifier_ordering = array_values(
+        mpull($property->getChildren(), 'getConcreteString'));
+      $expected_modifier_ordering = array_values(
+        array_intersect(
+          $modifiers,
+          $modifier_ordering));
+
+      if (count($modifier_ordering) != count($expected_modifier_ordering)) {
+        continue;
+      }
+
+      if ($modifier_ordering != $expected_modifier_ordering) {
+        $this->raiseLintAtNode(
+          $property,
+          self::LINT_MODIFIER_ORDERING,
+          pht('Non-conventional modifier ordering.'),
+          implode(' ', $expected_modifier_ordering));
+      }
+    }
+  }
+
+  private function lintInvalidModifiers(XHPASTNode $root) {
+    $methods = $root->selectDescendantsOfTypes(array(
+      'n_CLASS_MEMBER_MODIFIER_LIST',
+      'n_METHOD_MODIFIER_LIST',
+    ));
+
+    foreach ($methods as $method) {
+      $modifiers = $method->getChildren();
+
+      $is_abstract = false;
+      $is_final    = false;
+      $is_static   = false;
+      $visibility  = null;
+
+      foreach ($modifiers as $modifier) {
+        switch ($modifier->getConcreteString()) {
+          case 'abstract':
+            if ($method->getTypeName() == 'n_CLASS_MEMBER_MODIFIER_LIST') {
+              $this->raiseLintAtNode(
+                $modifier,
+                self::LINT_INVALID_MODIFIERS,
+                pht(
+                  'Properties cannot be declared %s.',
+                  'abstract'));
+            }
+
+            if ($is_abstract) {
+              $this->raiseLintAtNode(
+                $modifier,
+                self::LINT_INVALID_MODIFIERS,
+                pht(
+                  'Multiple %s modifiers are not allowed.',
+                  'abstract'));
+            }
+
+            if ($is_final) {
+              $this->raiseLintAtNode(
+                $modifier,
+                self::LINT_INVALID_MODIFIERS,
+                pht(
+                'Cannot use the %s modifier on an %s class member',
+                'final',
+                'abstract'));
+            }
+
+            $is_abstract = true;
+            break;
+
+          case 'final':
+            if ($is_abstract) {
+              $this->raiseLintAtNode(
+                $modifier,
+                self::LINT_INVALID_MODIFIERS,
+                pht(
+                'Cannot use the %s modifier on an %s class member',
+                'final',
+                'abstract'));
+            }
+
+            if ($is_final) {
+              $this->raiseLintAtNode(
+                $modifier,
+                self::LINT_INVALID_MODIFIERS,
+                pht(
+                  'Multiple %s modifiers are not allowed.',
+                  'final'));
+            }
+
+            $is_final = true;
+            break;
+          case 'public':
+          case 'protected':
+          case 'private':
+            if ($visibility) {
+              $this->raiseLintAtNode(
+                $modifier,
+                self::LINT_INVALID_MODIFIERS,
+                pht('Multiple access type modifiers are not allowed.'));
+            }
+
+            $visibility = $modifier->getConcreteString();
+            break;
+
+          case 'static':
+            if ($is_static) {
+              $this->raiseLintAtNode(
+                $modifier,
+                self::LINT_INVALID_MODIFIERS,
+                pht(
+                  'Multiple %s modifiers are not allowed.',
+                  'static'));
+            }
+            break;
+        }
+      }
+    }
   }
 
 }
