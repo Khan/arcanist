@@ -28,14 +28,7 @@ final class ArcanistPyFlakesLinter extends ArcanistExternalLinter {
   }
 
   public function getDefaultBinary() {
-    $prefix = $this->getDeprecatedConfiguration('lint.pyflakes.prefix');
-    $bin = $this->getDeprecatedConfiguration('lint.pyflakes.bin', 'pyflakes');
-
-    if ($prefix) {
-      return $prefix.'/'.$bin;
-    } else {
-      return $bin;
-    }
+    return 'pyflakes';
   }
 
   public function getVersion() {
@@ -82,10 +75,6 @@ final class ArcanistPyFlakesLinter extends ArcanistExternalLinter {
       $message->setSeverity($severity);
 
       $messages[] = $message;
-    }
-
-    if ($err && !$messages) {
-      return false;
     }
 
     return $messages;

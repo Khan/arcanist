@@ -23,7 +23,7 @@ abstract class ArcanistBaseXHPASTLinter extends ArcanistFutureLinter {
     return implode('-', $parts);
   }
 
-  final protected function raiseLintAtToken(
+  final public function raiseLintAtToken(
     XHPASTToken $token,
     $code,
     $desc,
@@ -36,7 +36,7 @@ abstract class ArcanistBaseXHPASTLinter extends ArcanistFutureLinter {
       $replace);
   }
 
-  final protected function raiseLintAtNode(
+  final public function raiseLintAtNode(
     XHPASTNode $node,
     $code,
     $desc,
@@ -157,7 +157,6 @@ abstract class ArcanistBaseXHPASTLinter extends ArcanistFutureLinter {
    * @task sharing
    */
   final protected function getXHPASTTreeForPath($path) {
-
     // If we aren't the linter responsible for actually building the parse
     // trees, go get the tree from that linter.
     if ($this->getXHPASTLinter() !== $this) {
@@ -165,7 +164,12 @@ abstract class ArcanistBaseXHPASTLinter extends ArcanistFutureLinter {
     }
 
     if (!array_key_exists($path, $this->trees)) {
+      if (!array_key_exists($path, $this->futures)) {
+        return;
+      }
+
       $this->trees[$path] = null;
+
       try {
         $this->trees[$path] = XHPASTTree::newFromDataAndResolvedExecFuture(
           $this->getData($path),

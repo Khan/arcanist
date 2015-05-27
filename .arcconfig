@@ -1,5 +1,4 @@
 {
-  "project.name" : "arcanist",
   "phabricator.uri" : "https://phabricator.khanacademy.org/",
   "unit.engine" : "PhutilUnitTestEngine",
   "load" : [
