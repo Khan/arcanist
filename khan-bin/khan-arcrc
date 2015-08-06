@@ -1,10 +1,6 @@
 {
   "config"  : {
-    "default"                      : "https:\/\/phabricator.khanacademy.org",
-    "lint.engine"                  : "ArcanistSingleLintEngine",
-    "lint.engine.single.linter"    : "ArcanistScriptAndRegexLinter",
-    "linter.scriptandregex.script" : "~\/khan\/devtools\/khan-linter\/runlint.py --always-exit-0 --blacklist=yes --propose-arc-fixes",
-    "linter.scriptandregex.regex"  : "\/^((?P<file>[^:]*):(?P<line>\\d+):((?P<char>\\d+):)? (?P<name>((?P<error>E)|(?P<warning>W))\\S+) (?P<message>[^\\x00]*)(\\x00(?P<original>[^\\x00]*)\\x00(?P<replacement>[^\\x00]*)\\x00)?)|(?P<ignore>SKIPPING.*)$\/m",
+    "default": "https:\/\/phabricator.khanacademy.org",
     "arc.land.update.default": "rebase",
     "history.immutable": false
   },
@@ -16,8 +12,7 @@
   },
   "khan": {
     "do_not_auto_update": [
-      "config/linter.scriptandregex.script", 
-      "aliases/mail", 
+      "aliases/mail",
       "khan/do_not_auto_update"
     ]
   }
