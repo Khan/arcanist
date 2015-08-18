@@ -108,10 +108,10 @@ def _update_arcrc(arc_root, default_arcrc_file='khan-bin/khan-arcrc',
         bak_filename = user_arcrc_file + '.bak'
         if create_bak and os.path.exists(user_arcrc_file):
             os.rename(user_arcrc_file, bak_filename)
-        f = open(user_arcrc_file, 'w')
         try:
-            json.dump(user_arcrc, f, indent=2, sort_keys=True)
-            f.close()
+            with open(user_arcrc_file, 'w') as f:
+                json.dump(user_arcrc, f, indent=2, sort_keys=True)
+            os.chmod(user_arcrc_file, 0600)
         except:
             if os.path.exists(bak_filename):
                 if os.path.exists(user_arcrc_file):  # in an inconsistent state
