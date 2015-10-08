@@ -205,7 +205,8 @@ def _try_save(filename, json_contents):
     try:
         with open(filename + '.tmp', 'w') as f:
             json.dump(json_contents, f)
-        os.unlink(filename)      # atomic rename
+        if os.path.exists(filename):
+            os.unlink(filename)      # atomic rename
         os.rename(filename + '.tmp', filename)
     except (IOError, OSError):
         pass
