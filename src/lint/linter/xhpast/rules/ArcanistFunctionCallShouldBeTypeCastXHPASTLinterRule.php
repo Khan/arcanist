@@ -14,15 +14,19 @@ final class ArcanistFunctionCallShouldBeTypeCastXHPASTLinterRule
   }
 
   public function process(XHPASTNode $root) {
-    static $cast_functions = array(
-      'boolval' => 'bool',
-      'doubleval' => 'double',
-      'floatval' => 'double',
-      'intval' => 'int',
-      'strval' => 'string',
-    );
+    static $cast_functions;
 
-    $casts = $this->getFunctionCalls($root, array_keys($cast_functions));
+    if ($cast_functions === null) {
+      $cast_functions = new CaseInsensitiveArray(array(
+        'boolval' => 'bool',
+        'doubleval' => 'double',
+        'floatval' => 'double',
+        'intval' => 'int',
+        'strval' => 'string',
+      ));
+    }
+
+    $casts = $this->getFunctionCalls($root, $cast_functions->getKeys());
 
     foreach ($casts as $cast) {
       $function_name = $cast
@@ -37,7 +41,30 @@ final class ArcanistFunctionCallShouldBeTypeCastXHPASTLinterRule
       // one parameter.
       if (count($parameters->getChildren()) == 1) {
         $parameter   = $parameters->getChildByIndex(0);
-        $replacement = '('.$cast_name.')'.$parameter->getConcreteString();
+        $replacement = '('.$cast_name.')';
+
+        if ($parameter->getTypeName() == 'n_BINARY_EXPRESSION') {
+          $replacement .= '('.$parameter->getConcreteString().')';
+        } else {
+          $replacement .= $parameter->getConcreteString();
+        }
+      }
+
+      if (strtolower($function_name) == 'intval') {
+        if (count($parameters->getChildren()) >= 2) {
+          $base = $parameters->getChildByIndex(1);
+
+          if ($base->getTypeName() != 'n_NUMERIC_SCALAR') {
+            break;
+          }
+
+          if ($base->getConcreteString() != '10') {
+            continue;
+          }
+
+          $parameter   = $parameters->getChildByIndex(0);
+          $replacement = '('.$cast_name.')'.$parameter->getConcreteString();
+        }
       }
 
       $this->raiseLintAtNode(
