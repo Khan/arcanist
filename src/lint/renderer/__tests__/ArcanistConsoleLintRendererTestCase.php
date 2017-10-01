@@ -4,6 +4,38 @@ final class ArcanistConsoleLintRendererTestCase
   extends PhutilTestCase {
 
   public function testRendering() {
+    $midline_original = <<<EOTEXT
+import apple;
+import banana;
+import cat;
+import dog;
+EOTEXT;
+
+    $midline_replacement = <<<EOTEXT
+import apple;
+import banana;
+
+import cat;
+import dog;
+EOTEXT;
+
+    $remline_original = <<<EOTEXT
+import apple;
+import banana;
+
+
+import cat;
+import dog;
+EOTEXT;
+
+    $remline_replacement = <<<EOTEXT
+import apple;
+import banana;
+
+import cat;
+import dog;
+EOTEXT;
+
     $map = array(
       'simple' => array(
         'line' => 1,
@@ -67,6 +99,27 @@ final class ArcanistConsoleLintRendererTestCase
         'char' => 4,
         'original' => 'should of',
       ),
+
+      'midline' => array(
+        'line' => 1,
+        'char' => 1,
+        'original' => $midline_original,
+        'replacement' => $midline_replacement,
+      ),
+
+      'remline' => array(
+        'line' => 1,
+        'char' => 1,
+        'original' => $remline_original,
+        'replacement' => $remline_replacement,
+      ),
+
+      'extrawhitespace' => array(
+        'line' => 2,
+        'char' => 1,
+        'original' => "\n",
+        'replacement' => '',
+      ),
     );
 
     $defaults = array(
@@ -79,6 +132,8 @@ final class ArcanistConsoleLintRendererTestCase
 
     foreach ($map as $key => $test_case) {
       $data = $this->readTestData("{$key}.txt");
+      $data = preg_replace('/~+\s*$/m', '', $data);
+
       $expect = $this->readTestData("{$key}.expect");
 
       $test_case = $test_case + $defaults;

@@ -118,7 +118,6 @@ final class ArcanistConsoleLintRenderer extends ArcanistLintRenderer {
       // or removing entire lines, but we'll adjust things below.
       $new_impact = substr_count($replacement, "\n") + 1;
 
-
       // If this is a change on a single line, we'll try to highlight the
       // changed character range to make it easier to pick out.
       if ($old_impact === 1 && $new_impact === 1) {
@@ -135,11 +134,13 @@ final class ArcanistConsoleLintRenderer extends ArcanistLintRenderer {
           strlen($replacement));
       }
 
-
       // If lines at the beginning of the changed line range are actually the
       // same, shrink the range. This happens when a patch just adds a line.
       do {
-        if ($old_lines[$start - 1] != $new_lines[$start - 1]) {
+        $old_line = idx($old_lines, $start - 1, null);
+        $new_line = idx($new_lines, $start - 1, null);
+
+        if ($old_line !== $new_line) {
           break;
         }
 
@@ -161,23 +162,20 @@ final class ArcanistConsoleLintRenderer extends ArcanistLintRenderer {
       // same, shrink the range. This happens when a patch just removes a
       // line.
       do {
-        $old_suffix = $old_lines[$start + $old_impact - 2];
-        $new_suffix = $new_lines[$start + $new_impact - 2];
+        $old_suffix = idx($old_lines, $start + $old_impact - 2, null);
+        $new_suffix = idx($new_lines, $start + $new_impact - 2, null);
 
-        if ($old_suffix != $new_suffix) {
+        if ($old_suffix !== $new_suffix) {
           break;
         }
 
         $old_impact--;
         $new_impact--;
 
-        if ($old_impact < 0 || $new_impact < 0) {
-          throw new Exception(
-            pht(
-              'Modified suffix line range has become negative '.
-              '(old = %d, new = %d).',
-              $old_impact,
-              $new_impact));
+        // We can end up here if a patch removes a line which occurs after
+        // another identical line.
+        if ($old_impact <= 0 || $new_impact <= 0) {
+          break;
         }
       } while (true);
 
