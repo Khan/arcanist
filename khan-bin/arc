@@ -111,7 +111,7 @@ def _update_arcrc(arc_root, default_arcrc_file='khan-bin/khan-arcrc',
         try:
             with open(user_arcrc_file, 'w') as f:
                 json.dump(user_arcrc, f, indent=2, sort_keys=True)
-            os.chmod(user_arcrc_file, 0600)
+            os.chmod(user_arcrc_file, 0o600)
         except:
             if os.path.exists(bak_filename):
                 if os.path.exists(user_arcrc_file):  # in an inconsistent state
