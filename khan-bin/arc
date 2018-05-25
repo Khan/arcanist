@@ -574,6 +574,8 @@ def main(arc_args, arc_root=None):
 
     arc_subcommand = _get_subcommand(arc_args)
 
+    _sync_arc(arc_root)
+
     # If they are trying to install a certificate, skip our fancy
     # work; it won't succeed anyway without the certificate!  (Better
     # would be to grep for '"cert"' in ~/.arcrc, but I don't want to
@@ -581,8 +583,6 @@ def main(arc_args, arc_root=None):
     if arc_subcommand == 'install-certificate':
         # This never returns.
         os.execv(arcanist_arc, [arcanist_arc] + arc_args)
-
-    _sync_arc(arc_root)
 
     # Handle any --rr flags that may be in arc_args (--rr is a khan extension).
     # Likewise with --cc; while --cc is a standard arc flag, we're more
