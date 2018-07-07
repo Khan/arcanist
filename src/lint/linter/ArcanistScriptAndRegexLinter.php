@@ -13,6 +13,8 @@
  *    features (see below for examples).
  *  - `script-and-regex.regex` The regex to process output with. This
  *    regex uses named capturing groups (detailed below) to interpret output.
+ *  - `batch` (optional) Set this to true if you want the script to be called
+ *    on files in batch rather than individually.
  *
  * The script will be invoked from the project root, so you can specify a
  * relative path like `scripts/lint.sh` or an absolute path like
@@ -24,10 +26,15 @@
  *
  * == Script... ==
  *
- * The script will be invoked once for each file that is to be linted, with
- * the file passed as the first argument. The file may begin with a "-"; ensure
- * your script will not interpret such files as flags (perhaps by ending your
- * script configuration with "--", if its argument parser supports that).
+ * The script will be invoked once for each file that is to be linted (unless
+ * you've included batch in your .arclint configuration), with the file passed
+ * as the first argument. The file may begin with a "-"; ensure your script
+ * will not interpret such files as flags (perhaps by ending your script
+ * configuration with "--", if its argument parser supports that).
+ *
+ * If you're running in batch mode, the script will be invoked once with the
+ * list of filenames as the args. A max batch size of 32 files will be handled
+ * at a time as that is the way paths are chunked by the ArcanistLintEngine.
  *
  * Note that when run via `arc diff`, the list of files to be linted includes
  * deleted files and files that were moved away by the change. The linter should
@@ -159,6 +166,7 @@ final class ArcanistScriptAndRegexLinter extends ArcanistLinter {
   private $script = null;
   private $regex = null;
   private $output = array();
+  private $batch = false;
 
   public function getInfoName() {
     return pht('Script and Regex');
@@ -179,23 +187,53 @@ final class ArcanistScriptAndRegexLinter extends ArcanistLinter {
    *
    * @task lint
    */
+
+  // NOTE: Right now batches are passed to this func as a batch
+  // size of 32 paths from ArcanistLintEngine. We could consider
+  // how to change this if we find that that batch size is slowing
+  // us down, but would recommend making it a divisor of 32 --
+  // perhaps 4 batches of 8?
   public function willLintPaths(array $paths) {
+    // If we are only asked to lint a single path, then
+    // don't batch, its too much overhead for a single file
+    if (count($paths) == 1) {
+      $this->batch = false;
+    }
+
     $root = $this->getProjectRoot();
 
     $futures = array();
-    foreach ($paths as $path) {
-      $future = new ExecFuture('%C %s', $this->script, $path);
+    if ($this->batch) {
+      $future = new ExecFuture('%C %Ls', $this->script, $paths);
       $future->setCWD($root);
-      $futures[$path] = $future;
+      // This key name does not really matter, it is arbitrarily set to the
+      // first file in the batch
+      $futures[$paths[0]] = $future;
+    } else {
+      foreach ($paths as $path) {
+        $future = new ExecFuture('%C %s', $this->script, $path);
+        $future->setCWD($root);
+        $futures[$path] = $future;
+      }
     }
 
     $futures = id(new FutureIterator($futures))
       ->limit(4);
+
+    // NOTE: In batch mode, there is only one future, and its key is an
+    // arbitrary path from the input parameters. This means that the lint
+    // output for *all* files will be associated, internally, with that one
+    // arbitrary filename. This is ok though because $this->output is just
+    // used to match up the output between the call to willLintPaths and
+    // lintPath (below). When arcanist goes to parse the lint output in
+    // lintPath, it will get the actual filename from the linter stdout and
+    // use that as the filename from then on out.
     foreach ($futures as $path => $future) {
       list($stdout) = $future->resolvex();
       $this->output[$path] = $stdout;
     }
   }
+
 
   /**
    * Run the regex on the output of the script.
@@ -301,6 +339,11 @@ final class ArcanistScriptAndRegexLinter extends ArcanistLinter {
         'type' => 'regex',
         'help' => pht('The regex to process output with.'),
       ),
+      'batch' => array(
+        'type' => 'optional bool',
+        'help' => pht('Run the script on files in batch rather '.
+                      'than individually.'),
+      ),
     );
 
     return $options + parent::getLinterConfigurationOptions();
@@ -313,6 +356,9 @@ final class ArcanistScriptAndRegexLinter extends ArcanistLinter {
         return;
       case 'script-and-regex.regex':
         $this->regex = $value;
+        return;
+      case 'batch':
+        $this->batch = $value;
         return;
     }
 
