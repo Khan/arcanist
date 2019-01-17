@@ -668,6 +668,12 @@ def main(arc_args, arc_root=None):
     if '413 Request Entity Too Large' in stderr:
         print >>sys.stderr, "(Run `arc diff --less-context` to work around.)"
 
+    if 'Command failed with error' in stderr and 'more bytes)' in stderr:
+        commands = re.findall(r'COMMAND\s*(.*)', stderr)
+        if commands:
+            print >>sys.stderr, "To see the full error output, run:"
+            print >>sys.stderr, '\n'.join(commands)
+
     sys.exit(rc)
 
 
