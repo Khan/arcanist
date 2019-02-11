@@ -405,6 +405,9 @@ try {
 
 } catch (Exception $ex) {
   $is_usage = ($ex instanceof ArcanistUsageException);
+  $too_large_error = ($ex instanceof HTTPFutureHTTPResponseStatus &&
+                      $ex->getStatusCode() === 413);
+
   if ($is_usage) {
     fwrite(STDERR, phutil_console_format(
       "**%s** %s\n",
@@ -455,6 +458,12 @@ try {
           fwrite(STDERR, $sub_ex->getCommand()."\n");
         }
       }
+    }
+
+    if ($too_large_error) {
+      fwrite(STDERR, phutil_console_format(
+        "(%s)\n",
+        pht('Try `%s` to work around this error.', 'arc diff --less-context')));
     }
   }
 
