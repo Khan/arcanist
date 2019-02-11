@@ -425,19 +425,37 @@ try {
     fwrite(STDERR, phutil_console_format(
       "<bg:red>** %s **</bg>\n", pht('Exception')));
 
-    while ($ex) {
-      fwrite(STDERR, $ex->getMessage()."\n");
+    $frame = $ex;
+    while ($frame) {
+      fwrite(STDERR, $frame->getMessage()."\n");
 
-      if ($ex instanceof PhutilProxyException) {
-        $ex = $ex->getPreviousException();
+      if ($frame instanceof PhutilProxyException) {
+        $frame = $frame->getPreviousException();
       } else {
-        $ex = null;
+        $frame = null;
       }
     }
 
     fwrite(STDERR, phutil_console_format(
       "(%s)\n",
       pht('Run with `%s` for a full exception trace.', '--trace')));
+
+    // This is the error-type that the linter emits when it fails.
+    // Probably the unit-test runner as well.  In each case, the
+    // standard error-emitter does not emit the full commandline to
+    // run, so we do instead.
+    if ($ex instanceof PhutilAggregateException) {
+      $wrote_header = 0;
+      foreach ($ex->getExceptions() as $sub_ex) {
+        if ($sub_ex instanceof CommandException) {
+          if (!$wrote_header) {
+            fwrite(STDERR, phutil_console_format("**To reproduce, run:**\n"));
+            $wrote_header = 1;
+          }
+          fwrite(STDERR, $sub_ex->getCommand()."\n");
+        }
+      }
+    }
   }
 
   exit(1);
