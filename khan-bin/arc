@@ -121,8 +121,16 @@ def _update_arcrc(arc_root, default_arcrc_file='khan-bin/khan-arcrc',
 
 
 def _git_pull_in_dir(dir_to_pull):
+    # If we are running as an exec step of a git rebase in another directory
+    # (e.g. git rebase -x 'arc amend'), git sets GIT_DIR and GIT_WORK_TREE
+    # which override the cwd as the location of the git tree to operate on.
+    # But we definitely-no-really want to operate on the arcanist repo, so we
+    # clear those out before calling git.
+    env = os.environ.copy()
+    del env['GIT_DIR']
+    del env['GIT_WORK_TREE']
     try:
-        subprocess.check_call(['git', 'pull', '-q'], cwd=dir_to_pull)
+        subprocess.check_call(['git', 'pull', '-q'], cwd=dir_to_pull, env=env)
     except subprocess.CalledProcessError, why:
         sys.exit('While updating the arc binary, "git pull" failed in %s: %s.'
                  ' Make sure the repo is clean.' % (dir_to_pull, str(why)))
