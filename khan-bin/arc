@@ -127,8 +127,8 @@ def _git_pull_in_dir(dir_to_pull):
     # But we definitely-no-really want to operate on the arcanist repo, so we
     # clear those out before calling git.
     env = os.environ.copy()
-    del env['GIT_DIR']
-    del env['GIT_WORK_TREE']
+    env.pop('GIT_DIR', None)
+    env.pop('GIT_WORK_TREE', None)
     try:
         subprocess.check_call(['git', 'pull', '-q'], cwd=dir_to_pull, env=env)
     except subprocess.CalledProcessError, why:
