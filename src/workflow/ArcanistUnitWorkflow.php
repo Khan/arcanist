@@ -241,15 +241,28 @@ EOTEXT
     $this->unresolvedTests = $unresolved;
 
     $overall_result = self::RESULT_OKAY;
+    $failed_tests = array();
     foreach ($results as $result) {
       $result_code = $result->getResult();
+      $test_name = $result->getName();
       if ($result_code == ArcanistUnitTestResult::RESULT_FAIL ||
           $result_code == ArcanistUnitTestResult::RESULT_BROKEN) {
         $overall_result = self::RESULT_FAIL;
-        break;
-      } else if ($result_code == ArcanistUnitTestResult::RESULT_UNSOUND) {
+        array_push($failed_tests, $test_name);
+      } else if ($result_code == ArcanistUnitTestResult::RESULT_UNSOUND &&
+                 $overall_result != self::RESULT_FAIL) {
         $overall_result = self::RESULT_UNSOUND;
       }
+    }
+
+    if ($overall_result == self::RESULT_FAIL) {
+      $console->writeOut(
+        "\n<bg:blue>** %s **</bg> To re-run the failed tests, run: %s",
+        pht('DEBUG'), 'testing/runtests.py');
+      foreach ($failed_tests as $failed_test) {
+        $console->writeOut(' %s', $failed_test);
+      }
+      $console->writeOut("\n");
     }
 
     if ($output_format !== 'full') {
