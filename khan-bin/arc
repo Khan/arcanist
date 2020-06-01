@@ -177,7 +177,7 @@ def _sync_arc(arc_root):
 def _conduit_call(arc_root, conduit_name, json_input={}):
     """Make an 'arc call-conduit' call with the given input."""
     arc = os.path.join(arc_root, 'bin', 'arc')
-    p = subprocess.Popen([arc, 'call-conduit', conduit_name],
+    p = subprocess.Popen([arc, 'call-conduit', '--', conduit_name],
                          stdout=subprocess.PIPE, stdin=subprocess.PIPE)
     conduit_stdout = p.communicate(input=json.dumps(json_input))[0]
     if p.returncode != 0:
@@ -550,7 +550,7 @@ def maybe_munge_browse_arg(arc_args):
 
     if not m and browse_arg == 'HEAD':
         # Use 'arc which' to see if the review is a parent of head.
-        which_output = subprocess.check_output(['arc', 'which'])
+        which_output = subprocess.check_output(['arc', 'which', '--'])
         m = re.search(r'^MATCHING REVISIONS.*?(D\d+)', which_output,
                       re.MULTILINE | re.DOTALL)
 
