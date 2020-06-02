@@ -139,14 +139,13 @@ def _git_pull_in_dir(dir_to_pull):
 def _sync_arc(arc_root):
     """Make sure we're using the most up-to-date version of arc.
 
-    Updates arcanist and libphutil repositories.  Since this takes a
+    Updates the arcanist repository.  Since this takes a
     few seconds, we only do it once a day.
 
     We also make sure the user's .arcrc file is up to date.
 
     Arguments:
-      arc_root: the root of the arcanist repository.  It is expected
-          that the libphutil repository be a sibling of arcanist.
+      arc_root: the root of the arcanist repository.
     """
     try:
         # TODO(csilvers): use ~/.arc.pull or /tmp/arc.pull.<uid>
@@ -157,9 +156,7 @@ def _sync_arc(arc_root):
         return
 
     # TODO(csilvers): better to call 'arc upgrade' here instead.
-    libphutil_root = os.path.join(os.path.dirname(arc_root), 'libphutil')
     _git_pull_in_dir(arc_root)
-    _git_pull_in_dir(libphutil_root)
 
     # Update the user's .arcrc with the default values (which may have
     # changed due to the pull).
