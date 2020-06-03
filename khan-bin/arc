@@ -165,7 +165,9 @@ def _sync_arc(arc_root):
     # Also update our cache of usernames, for username completion with --rr.
     try:
         _get_user_info(arc_root, use_cache=False)   # updates the cache
-    except RuntimeError:        # probably means we don't have an ssh key
+    # TODO(csilvers): notice the problem in `_call_conduit` and raise
+    # RuntimeError instead.
+    except (RuntimeError, TypeError):    # probably means no ssh key
         pass
 
     open('/tmp/arc.pull', 'w').close()    # update the last-pull time.
