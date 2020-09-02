@@ -581,7 +581,13 @@ def main(arc_args, arc_root=None):
 
     arc_subcommand = _get_subcommand(arc_args)
 
-    _sync_arc(arc_root)
+    try:
+        _sync_arc(arc_root)
+    except Exception as e:
+        print >>sys.stderr, (
+            "WARNING: Unable to update to the latest version of arc (in %s): "
+            "%s. It's best to fix this since old `arc`s may stop working."
+            % (_DEFAULT_ARC_ROOT, e))
 
     # If they are trying to install a certificate, skip our fancy
     # work; it won't succeed anyway without the certificate!  (Better
