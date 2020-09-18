@@ -348,20 +348,22 @@ def normalize_usernames(arc_root, names, use_arc_caches=True):
         if name.startswith('#'):   # it's a project
             all_candidates = all_projects
             dup_msg = 'There are a few projects matching "%s"' % name
+            untagged_name = name[1:]
         else:
             all_candidates = all_people
             dup_msg = 'There are a few folks matching "%s"' % name
+            untagged_name = name
 
         # First try the 'word' match.
         candidate_reviewers = set()
         for (person, username_and_realname) in all_candidates.iteritems():
-            if name in person.split():    # name matches a word in 'person'
+            if untagged_name in person.split():  # matches a word in 'person'
                 candidate_reviewers.add(username_and_realname)
 
         # Then, if that doesn't work, move to 'substring' match.
         if not candidate_reviewers:
             for (person, username_and_realname) in all_candidates.iteritems():
-                if name in person:        # name is a substring of 'person'
+                if untagged_name in person:      # is a substring of 'person'
                     candidate_reviewers.add(username_and_realname)
 
         candidate_reviewers = sorted(candidate_reviewers)
