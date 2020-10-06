@@ -10,12 +10,16 @@ expensive, which is why phabricator doesn't do that by default
 probably, but well worth it.)
 """
 
+import argparse
+import base64
 import json
 import os
 import re
 import subprocess
 import sys
 import time
+import urllib
+import urllib2
 
 
 try:
@@ -562,6 +566,190 @@ def maybe_munge_browse_arg(arc_args):
     return arc_args
 
 
+def _format(s, indent=0):
+    """Convert html to proper terminal markup, indent every line."""
+    if sys.stdout.isatty():   # assume the tty is vt100
+        m = {'<b>': '\033[1m', '</b>': '\033[0m',
+             '<i>': '\033[4m', '</i>': '\033[0m'}
+    else:
+        m = {'<b>': '', '</b>': '', '<i>': '', '</i>': ''}
+
+    for (markup, vt100_code) in m.iteritems():
+        s = s.replace(markup, vt100_code)
+    s = s.replace('\n', '\n' + ' ' * indent)
+    return ' ' * indent + s
+
+
+def print_full_help():
+    """Print help plus Khan Academy-added commands on `arc help`."""
+    # The `--` is just to avoid an infinite loop, since we interecpt arc help.
+    subprocess.call(['arc', 'help', '--'])
+    print
+    print
+    print _format('<b>KHAN ACADEMY COMMANDS</b>')
+    print
+    print _format('<b>znd</b> [options] <i>commit</i>', indent=6)
+    print _format('Deploy the current branch to a znd', indent=6)
+    print
+
+
+_ZND_FLAGS = (
+    ('version',
+     ('The version-prefix to use for the znd; the same as VERSION at\n'
+      'https://jenkins.khanacademy.org/job/deploy/job/deploy-znd/build\n'
+      'The `znd-`, date, and username will be auto-prefixed.'),
+     {}),
+
+    ('--services',
+     ('Comma-separated list of services to deploy the znd to.'),
+     {'default': 'static,dynamic'}),
+
+    ('--skip-i18n',
+     ('If specified, only deploy English files to the service.'),
+     {'action': 'store_true'}),
+
+    ('--modules',
+     ('Comma-separated list of modules to deploy the znd to.\n'
+      'Used when deploying to the `dynamic` service.'),
+     {'default': 'default'}),
+
+    ('--clean',
+     ('How much to run `make clean` before deploying.  Legal values\n'
+      'are "some", "most", "all", or "none".'),
+     {'choices': ['some', 'most', 'all', 'none'], 'default': 'some'}),
+
+    ('--prime',
+     ('If specified, prime services after deploying them.\n'
+      'This is only needed if many people will be accessing\n'
+      'the deploy.'),
+     {'action': 'store_true'}),
+
+    ('--no-highmem-instance',
+     ('If set, this version will be deployed on a regular\n'
+      'instance class rather than the highmem instance class.\n'
+      'Usually you want highmem to aid in filling caches and\n'
+      'reducing timeouts.  If you will be sending significant\n'
+      'traffic to your znd, consider setting this.'),
+     {'action': 'store_true'}),
+
+    ('--slack-channel',
+     ('The slack channel to which to send failure alerts.\n'
+      'Set to @yourusername to send a Slack DM (from Slackbot).'),
+     {'default': '#1s-and-0s-deploys'}),
+)
+
+
+def print_znd_help():
+    print _format("""\
+<b>ZND WORKFLOW</b>
+
+<b>znd</b> [options] <i>%s</i>
+
+Deploy the current branch to a znd (non-default version)
+in production.  This can deploy either a deploy branch
+OR a review-branch!
+
+%s
+""" % (_ZND_FLAGS[0][0],
+       _format('%s: %s' % (_ZND_FLAGS[0][0], _ZND_FLAGS[0][1]))))
+
+    for (name, help, options) in _ZND_FLAGS[1:]:
+      print _format('<i>%s</i>' % name, indent=6)
+      print _format(help, indent=10)
+      if 'default' in options:
+          print _format('Default is: %s' % options['default'], indent=10)
+      print
+
+
+def send_znd(arc_args):
+    try:
+        arcrc = json.load(open(os.path.expanduser("~/.arcrc")))
+    except (IOError, OSError):
+        arcrc = {}
+    auth_info = arcrc.get('khan', {}).get('jenkins_auth')
+    if not auth_info:
+        print """
+ERROR: You must add a Jenkins API token to your ~/.arcrc to use '`arc znd`.
+To do this, visit
+    https://jenkins.khanacademy.org/user/<gmail username>@khanacademy.org/configure
+and click on "Add New Token" under "API Token."  Name it `arc-znd`.
+Then edit your ~/.arcrc and add this new entry under "khan":
+    "jenkins_auth": {
+      "username": "<gmail username>@khanacademy.org",
+      "token": "<value of your new token>"
+    }
+Then re-run this `arc znd` command again.
+"""
+        sys.exit("(FATAL ERROR: Need to install jenkins auth.)")
+
+    parser = argparse.ArgumentParser(prog='arc znd')
+    for (name, help, options) in _ZND_FLAGS:
+        options['help'] = help
+        parser.add_argument(name, **options)
+
+    assert arc_args[0] == 'znd'
+    args = parser.parse_args(arc_args[1:])
+
+    # Figure out the phabricator tag of HEAD.
+    upstream = subprocess.check_output(
+        ['git', 'rev-parse', '--symbolic-full-name', '@{u}']).strip()
+    if upstream.startswith('refs/remotes/origin/'):
+        # We are a deploy branch, and already exist on github, just
+        # deploy our branch-name.
+        commit = upstream[len('refs/remotes/origin/'):]
+        commit_pretty_name = commit
+    else:
+        # We are a review branch, we need to ask arc to get the
+        # phabricator/diff/<diffid> for us.
+        which_output = subprocess.check_output(['arc', 'which'])
+        m = re.search(r'MATCHING REVISIONS.*?\n\s*(D\d+)\s', which_output,
+                      flags=re.DOTALL)
+        if not m:
+            raise ValueError("Cannot figure out the phabricator diff for HEAD")
+        commit_pretty_name = m.group(1)
+        commit = subprocess.check_output(
+            ['revisionid-to-diffid.sh', '--tag', commit_pretty_name]).strip()
+
+    params = {
+        'GIT_REVISION': commit,
+        'VERSION': args.version,
+    }
+    params['SERVICES'] = args.services or ''
+    params['SKIP_I18N'] = 'true' if args.skip_i18n else 'false'
+    params['MODULES'] = args.modules or ''
+    params['CLEAN'] = args.clean or ''
+    params['PRIME'] = 'true' if args.prime else 'false'
+    params['HIGHMEM_INSTANCE'] = (
+        'false' if args.no_highmem_instance else 'true')
+    params['SLACK_CHANNEL'] = args.slack_channel or ''
+
+    print ('Deploying `%s` as a znd with parameters:\n%s'
+           % (commit_pretty_name,
+              '\n'.join('  %s: %s' % kv for kv in sorted(params.iteritems()))))
+    x = raw_input('Continue? (y/N) ')
+    if x.lower() != 'y':
+        sys.exit("Aborted")
+
+    auth = base64.b64encode('%(username)s:%(token)s' % auth_info)
+    auth_header = {'Authorization': "Basic %s" % auth}
+    url = ('https://jenkins.khanacademy.org/'
+           '/crumbIssuer/api/xml?xpath=//crumb')
+    req = urllib2.Request(url, headers=auth_header)
+    r = urllib2.urlopen(req)
+    crumb = r.read()
+
+    url = ('https://jenkins.khanacademy.org/'
+           '/job/deploy/job/deploy-znd/buildWithParameters')
+    data = urllib.urlencode(params)
+    headers = auth_header.copy()
+    headers['Jenkins-Crumb'] = crumb
+    req = urllib2.Request(url, data, headers=headers)
+    urllib2.urlopen(req)
+
+    print ("SUCCESS! Running at "
+           "https://jenkins.khanacademy.org/job/deploy/job/deploy-znd/")
+
+
 def _get_subcommand(arc_args):
     """Return the arc command being run given args to 'arc'.
 
@@ -610,6 +798,18 @@ def main(arc_args, arc_root=None):
 
     if arc_subcommand == 'browse':
         arc_args = maybe_munge_browse_arg(arc_args)
+
+    if arc_args == ['help']:
+        print_full_help()
+        return 0
+
+    if arc_args == ['help', 'znd']:
+        print_znd_help()
+        return 0
+
+    if arc_subcommand == 'znd':
+        send_znd(arc_args)
+        return 0
 
     # Now run the 'real' (arcanist) arc.
     os.execv(arcanist_arc, [arcanist_arc] + arc_args)
