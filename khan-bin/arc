@@ -701,7 +701,8 @@ Then re-run this `arc znd` command again.
     else:
         # We are a review branch, we need to ask arc to get the
         # phabricator/diff/<diffid> for us.
-        which_output = subprocess.check_output(['arc', 'which'])
+        # TODO(csilvers): reuse code with maybe_munge_browse_arg.
+        which_output = subprocess.check_output(['arc', 'which', '--'])
         m = re.search(r'MATCHING REVISIONS.*?\n\s*(D\d+)\s', which_output,
                       flags=re.DOTALL)
         if not m:
