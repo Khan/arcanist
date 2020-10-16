@@ -600,6 +600,10 @@ _ZND_FLAGS = (
       'The `znd-`, date, and username will be auto-prefixed.'),
      {}),
 
+    ('--git-revision',
+     ('The git-revision to use for the znd, overriding the default of HEAD.'),
+     {}),
+
     ('--services',
      ('Comma-separated list of services to deploy the znd to.'),
      {'default': 'static,dynamic'}),
@@ -691,25 +695,30 @@ Then re-run this `arc znd` command again.
     args = parser.parse_args(arc_args[1:])
 
     # Figure out the phabricator tag of HEAD.
-    upstream = subprocess.check_output(
-        ['git', 'rev-parse', '--symbolic-full-name', '@{u}']).strip()
-    if upstream.startswith('refs/remotes/origin/'):
-        # We are a deploy branch, and already exist on github, just
-        # deploy our branch-name.
-        commit = upstream[len('refs/remotes/origin/'):]
+    if args.git_revision:
+        commit = args.git_revision
         commit_pretty_name = commit
     else:
-        # We are a review branch, we need to ask arc to get the
-        # phabricator/diff/<diffid> for us.
-        # TODO(csilvers): reuse code with maybe_munge_browse_arg.
-        which_output = subprocess.check_output(['arc', 'which', '--'])
-        m = re.search(r'MATCHING REVISIONS.*?\n\s*(D\d+)\s', which_output,
-                      flags=re.DOTALL)
-        if not m:
-            raise ValueError("Cannot figure out the phabricator diff for HEAD")
-        commit_pretty_name = m.group(1)
-        commit = subprocess.check_output(
-            ['revisionid-to-diffid.sh', '--tag', commit_pretty_name]).strip()
+        upstream = subprocess.check_output(
+            ['git', 'rev-parse', '--symbolic-full-name', '@{u}']).strip()
+        if upstream.startswith('refs/remotes/origin/'):
+            # We are a deploy branch, and already exist on github, just
+            # deploy our branch-name.
+            commit = upstream[len('refs/remotes/origin/'):]
+            commit_pretty_name = commit
+        else:
+            # We are a review branch, we need to ask arc to get the
+            # phabricator/diff/<diffid> for us.
+            # TODO(csilvers): reuse code with maybe_munge_browse_arg.
+            which_output = subprocess.check_output(['arc', 'which', '--'])
+            m = re.search(r'MATCHING REVISIONS.*?\n\s*(D\d+)\s', which_output,
+                          flags=re.DOTALL)
+            if not m:
+                raise ValueError("Cannot figure out phabricator diff for HEAD")
+            commit_pretty_name = m.group(1)
+            commit = subprocess.check_output(
+                ['revisionid-to-diffid.sh', '--tag', commit_pretty_name]
+            ).strip()
 
     params = {
         'GIT_REVISION': commit,
