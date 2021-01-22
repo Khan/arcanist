@@ -598,8 +598,10 @@ _ZND_FLAGS = (
       'The `znd-`, date, and username will be auto-prefixed.'),
      {}),
 
-    ('--git-revision',
-     ('The git-revision to use for the znd, overriding the default of HEAD.'),
+    ('--revision',
+     ('The revision to use for the znd, overriding the default of HEAD.\n'
+      'It can either be a git commit-ish (branchname or sha), or a\n'
+      'phabricator revision like "D12345".'),
      {}),
 
     ('--services',
@@ -656,11 +658,11 @@ OR a review-branch!
        _format('%s: %s' % (_ZND_FLAGS[0][0], _ZND_FLAGS[0][1]))))
 
     for (name, help, options) in _ZND_FLAGS[1:]:
-      print _format('<i>%s</i>' % name, indent=6)
-      print _format(help, indent=10)
-      if 'default' in options:
-          print _format('Default is: %s' % options['default'], indent=10)
-      print
+        print _format('<i>%s</i>' % name, indent=6)
+        print _format(help, indent=10)
+        if 'default' in options:
+            print _format('Default is: %s' % options['default'], indent=10)
+        print
 
 
 def send_znd(arc_args):
@@ -692,31 +694,56 @@ Then re-run this `arc znd` command again.
     assert arc_args[0] == 'znd'
     args = parser.parse_args(arc_args[1:])
 
-    # Figure out the phabricator tag of HEAD.
-    if args.git_revision:
-        commit = args.git_revision
-        commit_pretty_name = commit
-    else:
-        upstream = subprocess.check_output(
-            ['git', 'rev-parse', '--symbolic-full-name', '@{u}']).strip()
-        if upstream.startswith('refs/remotes/origin/'):
-            # We are a deploy branch, and already exist on github, just
-            # deploy our branch-name.
-            commit = upstream[len('refs/remotes/origin/'):]
-            commit_pretty_name = commit
-        else:
-            # We are a review branch, we need to ask arc to get the
-            # phabricator/diff/<diffid> for us.
-            # TODO(csilvers): reuse code with maybe_munge_browse_arg.
-            which_output = subprocess.check_output(['arc', 'which', '--'])
-            m = re.search(r'MATCHING REVISIONS.*?\n\s*(D\d+)\s', which_output,
-                          flags=re.DOTALL)
-            if not m:
-                raise ValueError("Cannot figure out phabricator diff for HEAD")
-            commit_pretty_name = m.group(1)
+    #
+    # Figure out the commit-ish to deploy.  There are 4 possibilities:
+    # 1) The commit-ish is specified directly via --revision.  We just
+    #    use that.
+    # 2) A phabricator diff is specified via --revision.  We convert
+    #    it to a commit-ish (a git tag) and use that.
+    # 3) HEAD exists on the remote.  In that case it's a commit-ish
+    #    we can use.
+    # 4) HEAD has a comment saying what the phabricator diff is.
+    #    (This happens when it's the first commit in this diff.)
+    #    We convert that to a commit-ish and use it.
+    # It might seem that (4) is a subset of (3), but it's not, because
+    # when you create a diff, arc updates HEAD locally to include the
+    # the revision-id, but does not push that update to the remote.
+    if args.revision:
+        if args.revision.startswith('D'):
             commit = subprocess.check_output(
-                ['revisionid-to-diffid.sh', '--tag', commit_pretty_name]
+                ['revisionid-to-diffid.sh', '--tag', args.revision]
             ).strip()
+        else:
+            commit = args.revision
+        commit_pretty_name = args.revision
+    else:
+        remote_tips = _git_call(['ls-remote', '-ht', 'origin'])
+        head_sha = _git_call(['rev-parse', 'HEAD']).strip()
+        # Technically, we can use head_sha if it satisfies the following:
+        #    any(merge_base(head_sha, t) == head_sha for t in remote_tips)
+        # But in practice people only want to deploy branches or tags, so
+        # I don't bother to do all those merge-base calculations.
+        m = re.search(r'^%s\s+refs/(?:tags|heads)/(.*)' % head_sha,
+                      remote_tips, flags=re.MULTILINE)
+        if m:
+            commit = head_sha
+            commit_pretty_name = m.group(1)
+        else:
+            log_output = subprocess.check_output(['git', 'log', '-n1'])
+            m = re.search(r'^\s*Differential Revision: .*/(D\d+)',
+                          log_output, flags=re.MULTILINE)
+            if m:
+                commit_pretty_name = m.group(1)
+                commit = subprocess.check_output(
+                    ['revisionid-to-diffid.sh', '--tag', commit_pretty_name]
+                ).strip()
+            else:
+                raise ValueError(
+                    "HEAD is not a deploy branch, and does not seem to be "
+                    "pushed to phab either.  You must have run `arc diff` "
+                    "on this commit.  (If you don't want it reviewed yet, "
+                    "you can run `arc diff --draft`.)  You can also try "
+                    "specifying --revision explicitly.")
 
     params = {
         'GIT_REVISION': commit,
